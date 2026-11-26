@@ -1,0 +1,249 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A0001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0001 /* AppDelegate.swift */; };
+		1A0002 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 2A0002 /* Info.plist */; };
+		1A0003 /* frontend in Resources */ = {isa = PBXBuildFile; fileRef = 2A0003 /* frontend */; };
+		1A0004 /* liborfeo_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0004 /* liborfeo_core.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		3A0001 /* Orfeo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Orfeo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2A0001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		2A0002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2A0003 /* frontend */ = {isa = PBXFileReference; lastKnownFileType = folder; name = frontend; path = ../../frontend; sourceTree = "<group>"; };
+		2A0004 /* liborfeo_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = liborfeo_core.a; path = ../../target/aarch64-apple-ios/release/liborfeo_core.a; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4A0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0004 /* liborfeo_core.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		5A0001 = {
+			isa = PBXGroup;
+			children = (
+				5A0002 /* Orfeo */,
+				5A0003 /* Products */,
+				5A0004 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		5A0002 /* Orfeo */ = {
+			isa = PBXGroup;
+			children = (
+				2A0001 /* AppDelegate.swift */,
+				2A0002 /* Info.plist */,
+				2A0003 /* frontend */,
+			);
+			path = Orfeo;
+			sourceTree = "<group>";
+		};
+		5A0003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				3A0001 /* Orfeo.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5A0004 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				2A0004 /* liborfeo_core.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		6A0001 /* Orfeo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A0001 /* Build configuration list for PBXNativeTarget "Orfeo" */;
+			buildPhases = (
+				4A0002 /* Sources */,
+				4A0001 /* Frameworks */,
+				4A0003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Orfeo;
+			productName = Orfeo;
+			productReference = 3A0001 /* Orfeo.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8A0001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = 7A0002 /* Build configuration list for PBXProject "Orfeo" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = es;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				es,
+				Base,
+			);
+			mainGroup = 5A0001;
+			productRefGroup = 5A0003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6A0001 /* Orfeo */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4A0003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0002 /* Info.plist in Resources */,
+				1A0003 /* frontend in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4A0002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0001 /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		9A0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				INFOPLIST_FILE = Orfeo/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../target/aarch64-apple-ios/release",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.abrahamgrundt.orfeo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9A0002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				INFOPLIST_FILE = Orfeo/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../target/aarch64-apple-ios/release",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.abrahamgrundt.orfeo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9A0003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		9A0004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7A0001 /* Build configuration list for PBXNativeTarget "Orfeo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0001 /* Debug */,
+				9A0002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A0002 /* Build configuration list for PBXProject "Orfeo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0003 /* Debug */,
+				9A0004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8A0001 /* Project object */;
+}

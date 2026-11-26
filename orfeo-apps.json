@@ -1,0 +1,19 @@
+{
+  "name": "Orfeo Mobile Source",
+  "identifier": "com.abrahamgrundt.orfeo.source",
+  "apps": [
+    {
+      "name": "Orfeo",
+      "bundleIdentifier": "com.abrahamgrundt.orfeo",
+      "developerName": "Abraham Grundt",
+      "version": "2.0.0",
+      "versionDate": "2026-11-25T21:00:00Z",
+      "versionDescription": "Orfeo Mobile 100% Rust Core: Gapless Playback instantáneo, WebP Covers, streaming adaptativo FLAC/Opus y control fluido de Google Nest Mini (Comedor).",
+      "downloadURL": "https://github.com/Chr0n0sL00p/orfeo-mobile/releases/latest/download/Orfeo_Rust.ipa",
+      "localizedDescription": "Cliente de audio Lossless y streaming Bit-Perfect con motor en Rust para iPhone 16 Pro.",
+      "iconURL": "https://raw.githubusercontent.com/Chr0n0sL00p/orfeo-mobile/main/assets/icon.png",
+      "tintColor": "22c55e",
+      "size": 18500000
+    }
+  ]
+}

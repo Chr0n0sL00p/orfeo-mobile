@@ -1,0 +1,70 @@
+name: Build Orfeo Mobile Rust IPA
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain & iOS Target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Build Rust Core (aarch64-apple-ios)
+        run: |
+          cargo build --release --target aarch64-apple-ios
+
+      - name: Build Xcode Archive
+        run: |
+          xcodebuild archive \
+            -project ios/Orfeo.xcodeproj \
+            -scheme Orfeo \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/Orfeo.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package IPA
+        run: |
+          mkdir -p build/Payload
+          cp -r build/Orfeo.xcarchive/Products/Applications/Orfeo.app build/Payload/
+          cd build
+          zip -r -q Orfeo_Rust.ipa Payload
+          ls -lh Orfeo_Rust.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orfeo_Rust_iOS
+          path: build/Orfeo_Rust.ipa
+
+      - name: Create or Update GitHub Release (for Wireless Auto-Updates)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/master')
+        with:
+          tag_name: v2.0.${{ github.run_number }}
+          name: "Orfeo Mobile v2.0.${{ github.run_number }} (Rust Core)"
+          body: |
+            ### Orfeo Mobile · Rust Core Engine v2.0
+            
+            - **Google Nest Mini (Comedor):** Control continuo de volumen por slider, sin alertas modales intrusivas.
+            - **Gapless Playback:** Pre-buffering predictivo de 2 MB (0 ms de espera entre canciones).
+            - **Carátulas WebP:** Miniaturas optimizadas a ~14 KB (scroll 120 Hz ProMotion ultra fluido).
+            - **Streaming Adaptativo:** FLAC Lossless Bit-Perfect en Wi-Fi vs. Opus 160k en 5G (-80% datos).
+            - **Actualización Inalámbrica:** Compatible con SideStore y OTA sin cables.
+          files: |
+            build/Orfeo_Rust.ipa
+            orfeo-apps.json
+            manifest.plist

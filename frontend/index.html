@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orfeo Mobile · Native Rust Core Engine</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              400: '#4ade80',
+              500: '#22c55e',
+              600: '#16a34a',
+              accent: '#38bdf8',
+              aurora: '#818cf8',
+            }
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', '"SF Pro Text"', 'sans-serif'],
+            mono: ['"SF Mono"', 'ui-monospace', 'Menlo', 'monospace']
+          },
+          animation: {
+            'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
+            'spin-slow': 'spin 12s linear infinite',
+          },
+          keyframes: {
+            pulseGlow: {
+              '0%, 100%': { opacity: '0.6', filter: 'blur(20px)' },
+              '50%': { opacity: '0.9', filter: 'blur(28px)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* iOS Custom scrollbars */
+    ::-webkit-scrollbar { width: 0px; height: 0px; }
+    
+    /* Dynamic Glassmorphism */
+    .ios-glass {
+      background: rgba(22, 26, 36, 0.72);
+      backdrop-filter: blur(24px) saturate(190%);
+      -webkit-backdrop-filter: blur(24px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .ios-glass-card {
+      background: rgba(30, 36, 50, 0.55);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .ios-island {
+      background: #000000;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255, 255, 255, 0.2);
+    }
+    
+    /* Device Frame Outer Glow */
+    .iphone-frame {
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8),
+                  0 0 0 3px #2d3342,
+                  0 0 0 7px #161a23,
+                  0 0 50px rgba(56, 189, 248, 0.12);
+    }
+
+    /* Aurora Glow Canvas */
+    #auroraCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      opacity: 0.85;
+      mix-blend-mode: screen;
+      transition: opacity 0.5s ease;
+    }
+
+    /* Range slider custom styling */
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 20px;
+      width: 20px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      cursor: pointer;
+      border: 2px solid #22c55e;
+    }
+  </style>
+</head>
+<body class="bg-[#0b0e14] text-slate-100 min-h-screen flex flex-col items-center justify-center p-2 sm:p-6 font-sans select-none antialiased">
+
+  <!-- Desktop Top Control Bar & Explainer -->
+  <header class="w-full max-w-4xl mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-2 bg-slate-900/60 rounded-2xl border border-slate-800">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <i data-lucide="zap" class="w-4 h-4 text-slate-950 stroke-[2.5]"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold text-white tracking-wide flex items-center gap-2">
+          Orfeo Mobile <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">100% Rust Core</span>
+        </h1>
+        <p class="text-[11px] text-slate-400">iPhone 16 Pro + Google Nest Mini Direct Casting & Seamless Volume</p>
+      </div>
+    </div>
+    
+    <!-- Controls to test Mobile Rust Features -->
+    <div class="flex items-center gap-2 text-xs">
+      <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/50">
+        <span class="text-slate-400 text-[11px]">Salida:</span>
+        <button id="btnTopCastToggle" onclick="toggleCastSheet()" class="flex items-center gap-1.5 text-emerald-400 font-medium font-mono hover:text-emerald-300 transition-colors">
+          <i data-lucide="cast" class="w-3.5 h-3.5" id="topCastIcon"></i>
+          <span id="topCastLabel">iPhone Audio</span>
+        </button>
+      </div>
+      <button onclick="toggleIslandExpand()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition-colors flex items-center gap-1.5">
+        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Dynamic Island</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- iPhone 16 Pro Chassis -->
+  <main class="relative w-full max-w-[393px] h-[835px] max-h-[92vh] bg-black rounded-[52px] iphone-frame overflow-hidden flex flex-col border-[4px] border-[#1e2330]">
+    
+    <!-- Speaker & Mic Notch Area -->
+    <div class="absolute top-2 left-1/2 -translate-x-1/2 w-20 h-1 bg-neutral-900 rounded-full z-50 pointer-events-none"></div>
+
+    <!-- Dynamic Island Container -->
+    <div class="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center justify-center transition-all duration-300 ease-out" id="islandContainer">
+      <div id="dynamicIsland" onclick="toggleIslandExpand()" class="ios-island cursor-pointer transition-all duration-300 ease-out h-[34px] rounded-full px-3.5 flex items-center justify-between text-white overflow-hidden shadow-2xl">
+        <!-- Compact Island View -->
+        <div id="islandCompact" class="flex items-center justify-between w-full gap-3">
+          <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full bg-gradient-to-tr from-cyan-400 to-indigo-500 animate-spin-slow"></div>
+            <span class="text-[11px] font-medium tracking-tight text-slate-200 truncate max-w-[95px]" id="islandCompactTrack">M83 · Midnight</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <!-- Animated Mini Waveform -->
+            <div class="flex items-end gap-[2px] h-3">
+              <span class="w-[2.5px] bg-emerald-400 rounded-full animate-pulse h-2.5"></span>
+              <span class="w-[2.5px] bg-cyan-400 rounded-full animate-pulse h-3" style="animation-delay: 0.15s"></span>
+              <span class="w-[2.5px] bg-emerald-400 rounded-full animate-pulse h-1.5" style="animation-delay: 0.3s"></span>
+            </div>
+            <span class="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300 font-mono" id="islandBadge">FLAC</span>
+            <span id="islandCastIndicator" class="hidden text-[9px] px-1 rounded bg-indigo-500/30 text-indigo-300 font-mono flex items-center gap-0.5">
+              <i data-lucide="cast" class="w-2.5 h-2.5"></i>
+            </span>
+          </div>
+        </div>
+
+        <!-- Expanded Island View (Revealed when clicked) -->
+        <div id="islandExpanded" class="hidden flex-col w-full p-2.5 gap-2.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <img id="islandCover" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=180&auto=format&fit=crop&q=80" class="w-11 h-11 rounded-xl object-cover shadow-md" alt="Cover">
+              <div>
+                <p class="text-xs font-semibold text-white tracking-tight" id="islandTitle">Midnight City</p>
+                <p class="text-[11px] text-slate-400" id="islandArtist">M83 · Hurry Up, We're Dreaming</p>
+              </div>
+            </div>
+            <div class="flex flex-col items-end">
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" id="islandExpandedCodec">FLAC 24-bit</span>
+              <span class="text-[9px] text-slate-400 font-mono mt-0.5" id="islandExpandedTarget">iPhone Speaker</span>
+            </div>
+          </div>
+          <!-- Mini Progress -->
+          <div class="w-full bg-neutral-800 rounded-full h-1 overflow-hidden">
+            <div id="islandProgress" class="bg-gradient-to-r from-emerald-400 to-cyan-400 h-full w-[42%]"></div>
+          </div>
+          <div class="flex items-center justify-between text-slate-300 px-2 pt-0.5">
+            <button onclick="prevTrack(event)" class="hover:text-white"><i data-lucide="skip-back" class="w-4 h-4"></i></button>
+            <button onclick="togglePlay(event)" class="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform">
+              <i data-lucide="pause" class="w-4 h-4 fill-black" id="islandPlayIcon"></i>
+            </button>
+            <button onclick="nextTrack(event)" class="hover:text-white"><i data-lucide="skip-forward" class="w-4 h-4"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar (iOS standard) -->
+    <div class="relative z-40 w-full h-11 pt-2 px-7 flex items-center justify-between text-xs font-semibold text-white tracking-tight">
+      <span id="iosClock">21:45</span>
+      <div class="flex items-center gap-1.5">
+        <i data-lucide="signal" class="w-3.5 h-3.5"></i>
+        <span class="text-[10px] font-mono" id="statusNetType">Wi-Fi</span>
+        <i data-lucide="battery-charging" class="w-4 h-4 text-emerald-400"></i>
+      </div>
+    </div>
+
+    <!-- App Viewport with Ambient Aurora Canvas -->
+    <div class="relative flex-1 w-full overflow-hidden flex flex-col">
+      <canvas id="auroraCanvas"></canvas>
+
+      <!-- VIEW 1: PLAYER SCREEN (Default) -->
+      <section id="viewPlayer" class="relative z-10 flex-1 flex flex-col justify-between px-6 pt-2 pb-4 overflow-y-auto">
+        
+        <!-- Header Info / Quality Pill -->
+        <div class="flex items-center justify-between mt-2">
+          <button onclick="switchTab('library')" class="w-9 h-9 rounded-full ios-glass flex items-center justify-center text-slate-300 hover:text-white transition-colors">
+            <i data-lucide="chevron-down" class="w-5 h-5"></i>
+          </button>
+
+          <!-- Adaptive Quality Pill (Interactive) -->
+          <button onclick="toggleNetwork()" class="ios-glass px-3 py-1 rounded-full flex items-center gap-2 border border-white/10 hover:border-emerald-500/50 transition-all shadow-sm">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" id="qualityLed"></span>
+            <span class="text-[11px] font-mono tracking-wider font-semibold text-emerald-300 uppercase" id="badgeQuality">FLAC 24/96</span>
+            <span class="text-[10px] text-slate-400 border-l border-white/10 pl-1.5" id="badgeBitrate">Direct</span>
+          </button>
+
+          <button onclick="toggleDiagnosticsModal()" class="w-9 h-9 rounded-full ios-glass flex items-center justify-center text-slate-300 hover:text-white transition-colors" title="Telemetría Rust Core">
+            <i data-lucide="cpu" class="w-4 h-4 text-cyan-400"></i>
+          </button>
+        </div>
+
+        <!-- Album Artwork with 3D Depth & WebP Delivery -->
+        <div class="my-auto flex flex-col items-center">
+          <div class="relative group cursor-pointer" onclick="cycleArtwork()">
+            <div id="artGlow" class="absolute -inset-2 bg-gradient-to-r from-emerald-500/40 via-cyan-500/40 to-indigo-500/40 rounded-3xl blur-2xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+            <img id="mainCover" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=360&auto=format&fit=crop&q=80" 
+                 class="relative w-64 h-64 sm:w-72 sm:h-72 rounded-[28px] object-cover shadow-2xl border border-white/15 transition-transform duration-500 group-hover:scale-[1.02]" 
+                 alt="Album Art WebP">
+            
+            <!-- WebP Optimized Badge -->
+            <div class="absolute bottom-3 right-3 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[9px] font-mono text-cyan-300 flex items-center gap-1 shadow">
+              <i data-lucide="image" class="w-2.5 h-2.5"></i>
+              <span>WebP · 14 KB</span>
+            </div>
+          </div>
+
+          <!-- Track & Artist Info -->
+          <div class="w-full mt-6 text-center">
+            <h2 id="trackTitle" class="text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-md">Midnight City</h2>
+            <p id="trackArtist" class="text-sm font-medium text-slate-400 mt-1">M83 · Hurry Up, We're Dreaming</p>
+          </div>
+        </div>
+
+        <!-- Gapless Pre-Buffering Status Indicator (Rust Feature #1) -->
+        <div class="w-full mb-1">
+          <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono mb-1 px-1">
+            <span class="flex items-center gap-1 text-cyan-300">
+              <i data-lucide="layers" class="w-3 h-3"></i>
+              <span>Rust Gapless Cache</span>
+            </span>
+            <span id="bufferStatus" class="text-emerald-400 font-semibold">Siguiente tema precargado (2.1 MB)</span>
+          </div>
+          <!-- Seekbar with Prebuffer visual bar -->
+          <div class="relative w-full h-1.5 bg-white/10 rounded-full overflow-hidden cursor-pointer" onclick="seekAudio(event)">
+            <div id="prebufferBar" class="absolute top-0 left-0 h-full bg-cyan-500/40 w-[85%] rounded-full transition-all duration-300"></div>
+            <div id="progressBar" class="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-400 to-cyan-400 w-[42%] rounded-full shadow-sm"></div>
+          </div>
+          <div class="flex justify-between text-[11px] text-slate-400 font-mono mt-1 px-0.5">
+            <span id="currentTime">1:42</span>
+            <span id="durationTime">4:04</span>
+          </div>
+        </div>
+
+        <!-- Playback Controls + Audio Output Selector (Google Nest Mini / AirPlay) -->
+        <div class="flex items-center justify-between px-2 mb-2">
+          <!-- Audio Output Device Trigger Button -->
+          <button onclick="toggleCastSheet()" id="btnCastTrigger" class="relative p-2 rounded-full ios-glass hover:border-emerald-500/50 transition-all text-slate-300 hover:text-white" title="Dispositivo de Audio">
+            <i data-lucide="speaker" class="w-5 h-5" id="castTriggerIcon"></i>
+            <span id="castActiveDot" class="hidden absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          </button>
+
+          <button onclick="prevTrack()" class="text-white hover:scale-110 active:scale-95 transition-transform">
+            <i data-lucide="skip-back" class="w-7 h-7 fill-white"></i>
+          </button>
+          
+          <button onclick="togglePlay()" class="w-16 h-16 rounded-full bg-white text-slate-950 flex items-center justify-center shadow-xl hover:scale-105 active:scale-90 transition-all">
+            <i data-lucide="pause" class="w-7 h-7 fill-slate-950" id="mainPlayIcon"></i>
+          </button>
+          
+          <button onclick="nextTrack()" class="text-white hover:scale-110 active:scale-95 transition-transform">
+            <i data-lucide="skip-forward" class="w-7 h-7 fill-white"></i>
+          </button>
+          
+          <button onclick="toggleLyrics()" class="text-slate-400 hover:text-white transition-colors p-2" id="btnLyrics">
+            <i data-lucide="quote" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Bottom Active Output Indicator Pill -->
+        <div onclick="toggleCastSheet()" class="ios-glass-card rounded-2xl p-2.5 flex items-center justify-between text-xs cursor-pointer hover:border-emerald-500/40 transition-all border border-white/5">
+          <div class="flex items-center gap-2">
+            <div id="outDeviceLed" class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+            <span class="text-[11px] font-medium text-slate-200" id="outDeviceName">Este iPhone (Altavoz)</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono">
+            <span id="outDeviceStatus">Tocar para cambiar</span>
+            <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- VIEW 2: LIBRARY / ALBUMS GRID SCREEN -->
+      <section id="viewLibrary" class="relative z-10 flex-1 hidden flex-col px-5 pt-2 pb-4 overflow-y-auto">
+        <div class="flex items-center justify-between mt-2 mb-3">
+          <h2 class="text-2xl font-bold tracking-tight text-white">Biblioteca</h2>
+          <span class="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">1.237 Pistas</span>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="relative mb-3">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+          <input type="text" placeholder="Buscar artista, álbum o canción..." class="w-full bg-slate-900/80 border border-slate-700/60 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400">
+        </div>
+
+        <!-- Quick Filter Tabs -->
+        <div class="flex gap-2 overflow-x-auto pb-2 mb-2 text-xs">
+          <button class="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap">Recientes</button>
+          <button class="px-3 py-1 rounded-full bg-slate-800/80 text-slate-400 border border-slate-700/50 whitespace-nowrap hover:text-white">Álbumes</button>
+          <button class="px-3 py-1 rounded-full bg-slate-800/80 text-slate-400 border border-slate-700/50 whitespace-nowrap hover:text-white">Favoritos</button>
+        </div>
+
+        <!-- Grid of WebP Miniatures -->
+        <div class="grid grid-cols-2 gap-3 pb-20">
+          <div onclick="selectSong(0)" class="ios-glass-card rounded-2xl p-2.5 cursor-pointer hover:border-emerald-500/40 transition-all group">
+            <div class="relative aspect-square rounded-xl overflow-hidden mb-2">
+              <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=180&auto=format&fit=crop&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Cover">
+              <span class="absolute bottom-1.5 right-1.5 text-[8px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-cyan-300">WebP · 12K</span>
+            </div>
+            <p class="text-xs font-semibold text-white truncate">Hurry Up, We're Dreaming</p>
+            <p class="text-[10px] text-slate-400 truncate">M83 · 2011</p>
+          </div>
+
+          <div onclick="selectSong(1)" class="ios-glass-card rounded-2xl p-2.5 cursor-pointer hover:border-emerald-500/40 transition-all group">
+            <div class="relative aspect-square rounded-xl overflow-hidden mb-2">
+              <img src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=180&auto=format&fit=crop&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Cover">
+              <span class="absolute bottom-1.5 right-1.5 text-[8px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-cyan-300">WebP · 14K</span>
+            </div>
+            <p class="text-xs font-semibold text-white truncate">Random Access Memories</p>
+            <p class="text-[10px] text-slate-400 truncate">Daft Punk · 2013</p>
+          </div>
+
+          <div onclick="selectSong(2)" class="ios-glass-card rounded-2xl p-2.5 cursor-pointer hover:border-emerald-500/40 transition-all group">
+            <div class="relative aspect-square rounded-xl overflow-hidden mb-2">
+              <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=180&auto=format&fit=crop&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Cover">
+              <span class="absolute bottom-1.5 right-1.5 text-[8px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-cyan-300">WebP · 16K</span>
+            </div>
+            <p class="text-xs font-semibold text-white truncate">Currents</p>
+            <p class="text-[10px] text-slate-400 truncate">Tame Impala · 2015</p>
+          </div>
+
+          <div onclick="selectSong(3)" class="ios-glass-card rounded-2xl p-2.5 cursor-pointer hover:border-emerald-500/40 transition-all group">
+            <div class="relative aspect-square rounded-xl overflow-hidden mb-2">
+              <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=180&auto=format&fit=crop&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Cover">
+              <span class="absolute bottom-1.5 right-1.5 text-[8px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-cyan-300">WebP · 11K</span>
+            </div>
+            <p class="text-xs font-semibold text-white truncate">After Hours</p>
+            <p class="text-[10px] text-slate-400 truncate">The Weeknd · 2020</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: LIVE SYNCED LYRICS (Overlay) -->
+      <section id="viewLyrics" class="absolute inset-0 z-20 bg-slate-950/90 backdrop-blur-2xl hidden flex-col px-6 pt-12 pb-6 overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-xs font-mono text-cyan-400 uppercase tracking-widest">Letras Sincronizadas</span>
+          <button onclick="toggleLyrics()" class="w-8 h-8 rounded-full ios-glass flex items-center justify-center text-slate-300 hover:text-white">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="flex-1 flex flex-col justify-center space-y-6 text-center text-slate-500 text-lg sm:text-xl font-bold select-none">
+          <p class="transition-all duration-300 text-slate-600">City is my church</p>
+          <p class="transition-all duration-300 text-slate-600">It wraps in the blinding twilight</p>
+          <p class="transition-all duration-300 text-white scale-110 drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]">Waiting in a car</p>
+          <p class="transition-all duration-300 text-slate-400">Waiting for a ride in the dark</p>
+          <p class="transition-all duration-300 text-slate-600">The city is my church</p>
+        </div>
+      </section>
+
+      <!-- VIEW 4: GOOGLE NEST MINI & AUDIO OUTPUT SHEET (Apple Home / Spotify Connect Style) -->
+      <div id="sheetCast" class="absolute inset-0 z-30 bg-black/60 backdrop-blur-md hidden flex-col justify-end transition-all">
+        <!-- Backdrop click to dismiss -->
+        <div class="flex-1" onclick="toggleCastSheet()"></div>
+
+        <!-- Bottom Sheet Modal Content -->
+        <div class="w-full bg-[#141824] rounded-t-[36px] p-5 pb-8 border-t border-slate-700/60 shadow-2xl flex flex-col gap-4 animate-in slide-in-from-bottom duration-300">
+          
+          <!-- Top Grabber Handle -->
+          <div class="w-12 h-1.5 bg-slate-600 rounded-full mx-auto -mt-1 mb-1"></div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                <span>Dispositivos de Audio</span>
+              </h3>
+              <p class="text-xs text-slate-400">Conecta y controla el volumen directamente</p>
+            </div>
+            <button onclick="toggleCastSheet()" class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <!-- Devices List -->
+          <div class="space-y-2.5">
+            <!-- Option 1: Este iPhone -->
+            <div id="deviceCardIphone" onclick="switchToIphone()" class="ios-glass p-3 rounded-2xl flex items-center justify-between cursor-pointer border border-emerald-500/40 bg-emerald-500/10 transition-all">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-200">
+                  <i data-lucide="smartphone" class="w-5 h-5 text-emerald-400"></i>
+                </div>
+                <div>
+                  <p class="text-xs font-bold text-white">Este iPhone 16 Pro</p>
+                  <p class="text-[11px] text-slate-400">Altavoces estéreo / Auriculares</p>
+                </div>
+              </div>
+              <div id="checkIphone" class="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                <i data-lucide="check" class="w-3.5 h-3.5 text-black stroke-[3]"></i>
+              </div>
+            </div>
+
+            <!-- Option 2: Google Nest Mini (Comedor) -->
+            <div id="deviceCardNest" onclick="switchToNest()" class="ios-glass p-3 rounded-2xl flex items-center justify-between cursor-pointer border border-white/5 hover:border-indigo-500/40 transition-all">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-200">
+                  <i data-lucide="cast" class="w-5 h-5 text-indigo-400"></i>
+                </div>
+                <div>
+                  <div class="flex items-center gap-1.5">
+                    <p class="text-xs font-bold text-white">Google Nest Mini</p>
+                    <span class="text-[9px] px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">Comedor</span>
+                  </div>
+                  <p class="text-[11px] text-slate-400" id="nestSubtext">Tocar para transmitir (100.117.169.38:4550)</p>
+                </div>
+              </div>
+              <div id="checkNest" class="hidden w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                <i data-lucide="check" class="w-3.5 h-3.5 text-black stroke-[3]"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dedicated Nest Mini Smooth Volume Card (Active when casting or previewed) -->
+          <div id="nestVolumeControl" class="ios-glass-card rounded-2xl p-4 border border-indigo-500/30 bg-indigo-950/20">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <i data-lucide="volume-2" class="w-4 h-4 text-indigo-400"></i>
+                <span>Volumen Google Nest Mini</span>
+              </span>
+              <span class="text-xs font-mono font-bold text-emerald-400" id="nestVolLabel">55%</span>
+            </div>
+
+            <!-- Smooth continuous slider (0 to 100%) -->
+            <div class="flex items-center gap-3 my-1">
+              <button onclick="adjustNestVolume(-5)" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 active:scale-95 transition-transform">
+                <i data-lucide="minus" class="w-4 h-4"></i>
+              </button>
+              
+              <input type="range" id="nestVolumeSlider" min="0" max="100" value="55" 
+                     oninput="onNestVolumeInput(this.value)" 
+                     class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+
+              <button onclick="adjustNestVolume(5)" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 active:scale-95 transition-transform">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <!-- Quick Preset Pills (One-touch 20%, 50%, 80%) -->
+            <div class="flex justify-between items-center mt-3 pt-2 border-t border-white/5 text-[10px] text-slate-400">
+              <span class="font-mono">Presets rápidos:</span>
+              <div class="flex gap-1.5">
+                <button onclick="setNestVolExact(20)" class="px-2.5 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 font-mono text-slate-300">20%</button>
+                <button onclick="setNestVolExact(45)" class="px-2.5 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 font-mono text-slate-300">45%</button>
+                <button onclick="setNestVolExact(70)" class="px-2.5 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 font-mono text-slate-300">70%</button>
+                <button onclick="setNestVolExact(90)" class="px-2.5 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 font-mono text-slate-300">90%</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- VIEW 5: TELEMETRY & ARCHITECTURE MODAL -->
+      <div id="modalDiagnostics" class="absolute inset-0 z-30 bg-black/85 backdrop-blur-xl hidden flex-col p-5 overflow-y-auto">
+        <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+          <div class="flex items-center gap-2">
+            <i data-lucide="cpu" class="w-4 h-4 text-emerald-400"></i>
+            <h3 class="text-sm font-bold text-white tracking-wide">Orfeo Engine v2.0 (Rust)</h3>
+          </div>
+          <button onclick="toggleDiagnosticsModal()" class="text-slate-400 hover:text-white">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <!-- Metric Cards -->
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+              <span class="text-[10px] text-slate-400 block">Memoria RAM (App)</span>
+              <span class="text-base font-bold text-emerald-400 font-mono">22.4 MB</span>
+              <span class="text-[9px] text-emerald-500/80 block mt-0.5">-72% vs Amperfy</span>
+            </div>
+            <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+              <span class="text-[10px] text-slate-400 block">Latencia de Inicio</span>
+              <span class="text-base font-bold text-cyan-400 font-mono">18 ms</span>
+              <span class="text-[9px] text-cyan-500/80 block mt-0.5">Buffer Dual en RAM</span>
+            </div>
+          </div>
+
+          <!-- Feature: Nest Mini Direct Control -->
+          <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between font-semibold text-slate-200 mb-1">
+              <span class="flex items-center gap-1.5">
+                <i data-lucide="cast" class="w-3.5 h-3.5 text-indigo-400"></i>
+                <span>Google Nest Mini Direct Cast</span>
+              </span>
+              <span class="text-[10px] text-indigo-400 font-mono">Puerto 4550</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Control de volumen sin modales toscos. Conexión de 1 solo toque y transcodificación Bit-Perfect hacia el altavoz inteligente del comedor.
+            </p>
+          </div>
+
+          <!-- Feature 1: Gapless Pre-buffer -->
+          <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between font-semibold text-slate-200 mb-1">
+              <span class="flex items-center gap-1.5">
+                <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Gapless Predictivo</span>
+              </span>
+              <span class="text-[10px] text-emerald-400 font-mono">Activo</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              A falta de 15 segundos para terminar la pista actual, el hilo en Rust descarga los primeros 2 MB del siguiente tema. Transición de 0 ms.
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- iOS Bottom Navigation Bar -->
+    <nav class="relative z-40 w-full h-16 ios-glass flex items-center justify-around px-4 border-t border-white/5">
+      <button onclick="switchTab('player')" id="navPlayer" class="flex flex-col items-center gap-0.5 text-emerald-400 transition-colors">
+        <i data-lucide="disc" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium tracking-tight">Reproductor</span>
+      </button>
+
+      <button onclick="switchTab('library')" id="navLibrary" class="flex flex-col items-center gap-0.5 text-slate-400 hover:text-white transition-colors">
+        <i data-lucide="library" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium tracking-tight">Biblioteca</span>
+      </button>
+
+      <button onclick="toggleDiagnosticsModal()" id="navEngine" class="flex flex-col items-center gap-0.5 text-slate-400 hover:text-white transition-colors">
+        <i data-lucide="activity" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium tracking-tight">Rust Engine</span>
+      </button>
+    </nav>
+
+    <!-- iOS Home Indicator Pill -->
+    <div class="relative z-40 w-full h-5 flex items-center justify-center bg-black/60">
+      <div class="w-32 h-1 bg-white/40 rounded-full"></div>
+    </div>
+
+  </main>
+
+  <!-- Interactive JavaScript Engine -->
+  <script>
+    lucide.createIcons();
+
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const clockEl = document.getElementById('iosClock');
+      if (clockEl) clockEl.innerText = `${h}:${m}`;
+    }
+    updateClock();
+    setInterval(updateClock, 10000);
+
+    // State Variables
+    let isPlaying = true;
+    let isExpandedIsland = false;
+    let isNetworkWifi = true;
+    let currentTrackIdx = 0;
+    let currentSeconds = 102;
+    let durationSeconds = 244;
+    
+    // Nest Mini Cast State
+    let isCastingNest = false;
+    let nestVolume = 55; // 0 to 100
+
+    const playlist = [
+      {
+        id: "m83_midnight",
+        title: "Midnight City",
+        artist: "M83",
+        album: "Hurry Up, We're Dreaming",
+        cover: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=600&auto=format&fit=crop&q=80",
+        duration: "4:04",
+        seconds: 244,
+        nextPreloaded: "Giorgio by Moroder · 2.1 MB precargado",
+      },
+      {
+        id: "daft_giorgio",
+        title: "Giorgio by Moroder",
+        artist: "Daft Punk",
+        album: "Random Access Memories",
+        cover: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80",
+        duration: "9:04",
+        seconds: 544,
+        nextPreloaded: "The Less I Know The Better · 1.9 MB precargado",
+      },
+      {
+        id: "tame_less",
+        title: "The Less I Know The Better",
+        artist: "Tame Impala",
+        album: "Currents",
+        cover: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop&q=80",
+        duration: "3:36",
+        seconds: 216,
+        nextPreloaded: "Blinding Lights · 2.4 MB precargado",
+      },
+      {
+        id: "weeknd_blinding",
+        title: "Blinding Lights",
+        artist: "The Weeknd",
+        album: "After Hours",
+        cover: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop&q=80",
+        duration: "3:20",
+        seconds: 200,
+        nextPreloaded: "Midnight City · 2.1 MB precargado",
+      }
+    ];
+
+    // Dynamic Island Expansion
+    function toggleIslandExpand() {
+      const island = document.getElementById('dynamicIsland');
+      const compact = document.getElementById('islandCompact');
+      const expanded = document.getElementById('islandExpanded');
+      isExpandedIsland = !isExpandedIsland;
+
+      if (isExpandedIsland) {
+        island.style.width = '350px';
+        island.style.height = '145px';
+        island.style.borderRadius = '32px';
+        compact.classList.add('hidden');
+        expanded.classList.remove('hidden');
+      } else {
+        island.style.width = '195px';
+        island.style.height = '34px';
+        island.style.borderRadius = '9999px';
+        compact.classList.remove('hidden');
+        expanded.classList.add('hidden');
+      }
+    }
+    document.getElementById('dynamicIsland').style.width = '195px';
+
+    // Play/Pause
+    function togglePlay(e) {
+      if (e) e.stopPropagation();
+      isPlaying = !isPlaying;
+      updatePlayIcons();
+      if (isCastingNest) {
+        sendNestCastControl(isPlaying ? "resume" : "pause");
+      }
+    }
+
+    function updatePlayIcons() {
+      const mainIcon = document.getElementById('mainPlayIcon');
+      const islandIcon = document.getElementById('islandPlayIcon');
+      if (isPlaying) {
+        mainIcon.setAttribute('data-lucide', 'pause');
+        if (islandIcon) islandIcon.setAttribute('data-lucide', 'pause');
+      } else {
+        mainIcon.setAttribute('data-lucide', 'play');
+        if (islandIcon) islandIcon.setAttribute('data-lucide', 'play');
+      }
+      lucide.createIcons();
+    }
+
+    // Tracks navigation
+    function nextTrack(e) {
+      if (e) e.stopPropagation();
+      currentTrackIdx = (currentTrackIdx + 1) % playlist.length;
+      loadTrack(currentTrackIdx);
+    }
+
+    function prevTrack(e) {
+      if (e) e.stopPropagation();
+      currentTrackIdx = (currentTrackIdx - 1 + playlist.length) % playlist.length;
+      loadTrack(currentTrackIdx);
+    }
+
+    function selectSong(idx) {
+      currentTrackIdx = idx;
+      loadTrack(idx);
+      switchTab('player');
+    }
+
+    function loadTrack(idx) {
+      const song = playlist[idx];
+      document.getElementById('trackTitle').innerText = song.title;
+      document.getElementById('trackArtist').innerText = `${song.artist} · ${song.album}`;
+      document.getElementById('mainCover').src = song.cover;
+      document.getElementById('islandCover').src = song.cover;
+      document.getElementById('islandTitle').innerText = song.title;
+      document.getElementById('islandArtist').innerText = song.artist;
+      document.getElementById('islandCompactTrack').innerText = `${song.artist} · ${song.title.slice(0, 10)}`;
+      document.getElementById('durationTime').innerText = song.duration;
+      document.getElementById('bufferStatus').innerText = song.nextPreloaded;
+      
+      currentSeconds = 0;
+      durationSeconds = song.seconds;
+      updateProgressVisual();
+      
+      if (isCastingNest) {
+        sendNestCastPlay(song.id, song.title, 0);
+      }
+
+      const cover = document.getElementById('mainCover');
+      cover.classList.add('scale-95');
+      setTimeout(() => cover.classList.remove('scale-95'), 200);
+    }
+
+    // Cast Device Bottom Sheet Toggle
+    function toggleCastSheet() {
+      const sheet = document.getElementById('sheetCast');
+      sheet.classList.toggle('hidden');
+      sheet.classList.toggle('flex');
+    }
+
+    // Switch Audio Target to Google Nest Mini
+    function switchToNest() {
+      isCastingNest = true;
+      updateCastVisuals();
+      const currentSong = playlist[currentTrackIdx];
+      sendNestCastPlay(currentSong.id, currentSong.title, currentSeconds);
+    }
+
+    // Switch Audio Target back to iPhone Local
+    function switchToIphone() {
+      isCastingNest = false;
+      updateCastVisuals();
+      sendNestCastControl("stop");
+    }
+
+    function updateCastVisuals() {
+      const checkIphone = document.getElementById('checkIphone');
+      const checkNest = document.getElementById('checkNest');
+      const cardIphone = document.getElementById('deviceCardIphone');
+      const cardNest = document.getElementById('deviceCardNest');
+      const outLed = document.getElementById('outDeviceLed');
+      const outName = document.getElementById('outDeviceName');
+      const outStatus = document.getElementById('outDeviceStatus');
+      const topLabel = document.getElementById('topCastLabel');
+      const topIcon = document.getElementById('topCastIcon');
+      const castTriggerIcon = document.getElementById('castTriggerIcon');
+      const castActiveDot = document.getElementById('castActiveDot');
+      const islandTarget = document.getElementById('islandExpandedTarget');
+      const islandIndicator = document.getElementById('islandCastIndicator');
+
+      if (isCastingNest) {
+        // Active Nest
+        checkIphone.classList.add('hidden');
+        checkNest.classList.remove('hidden');
+        cardIphone.className = "ios-glass p-3 rounded-2xl flex items-center justify-between cursor-pointer border border-white/5 hover:border-slate-600 transition-all";
+        cardNest.className = "ios-glass p-3 rounded-2xl flex items-center justify-between cursor-pointer border border-indigo-500/50 bg-indigo-500/15 transition-all shadow-lg shadow-indigo-500/10";
+        
+        outLed.className = "w-2.5 h-2.5 rounded-full bg-indigo-400 animate-pulse";
+        outName.innerText = "Google Nest Mini (Comedor)";
+        outStatus.innerText = `Volumen ${nestVolume}%`;
+        
+        topLabel.innerText = `Nest Mini (${nestVolume}%)`;
+        topLabel.className = "text-indigo-400 font-semibold font-mono";
+        topIcon.setAttribute('data-lucide', 'cast');
+        topIcon.classList.add('text-indigo-400');
+        
+        castTriggerIcon.setAttribute('data-lucide', 'cast');
+        castTriggerIcon.classList.add('text-indigo-400');
+        castActiveDot.classList.remove('hidden');
+        
+        islandTarget.innerText = "Google Nest Mini";
+        islandIndicator.classList.remove('hidden');
+      } else {
+        // Active iPhone
+        checkIphone.classList.remove('hidden');
+        checkNest.classList.add('hidden');
+        cardIphone.className = "ios-glass p-3 rounded-2xl flex items-center justify-between cursor-pointer border border-emerald-500/40 bg-emerald-500/10 transition-all";
+        cardNest.className = "ios-glass p-3 rounded-2xl flex items-center justify-between cursor-pointer border border-white/5 hover:border-indigo-500/40 transition-all";
+        
+        outLed.className = "w-2.5 h-2.5 rounded-full bg-slate-400";
+        outName.innerText = "Este iPhone 16 Pro";
+        outStatus.innerText = "Tocar para cambiar";
+        
+        topLabel.innerText = "iPhone Audio";
+        topLabel.className = "text-emerald-400 font-medium font-mono";
+        topIcon.setAttribute('data-lucide', 'smartphone');
+        topIcon.classList.remove('text-indigo-400');
+        
+        castTriggerIcon.setAttribute('data-lucide', 'speaker');
+        castTriggerIcon.classList.remove('text-indigo-400');
+        castActiveDot.classList.add('hidden');
+        
+        islandTarget.innerText = "iPhone Speaker";
+        islandIndicator.classList.add('hidden');
+      }
+      lucide.createIcons();
+    }
+
+    // Smooth Nest Volume Input
+    let debounceTimer = null;
+    function onNestVolumeInput(val) {
+      nestVolume = parseInt(val, 10);
+      document.getElementById('nestVolLabel').innerText = `${nestVolume}%`;
+      if (isCastingNest) {
+        document.getElementById('outDeviceStatus').innerText = `Volumen ${nestVolume}%`;
+        document.getElementById('topCastLabel').innerText = `Nest Mini (${nestVolume}%)`;
+      }
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        sendNestVolume(nestVolume / 100.0);
+      }, 150);
+    }
+
+    function adjustNestVolume(delta) {
+      const slider = document.getElementById('nestVolumeSlider');
+      let val = Math.max(0, Math.min(100, parseInt(slider.value, 10) + delta));
+      slider.value = val;
+      onNestVolumeInput(val);
+    }
+
+    function setNestVolExact(val) {
+      const slider = document.getElementById('nestVolumeSlider');
+      slider.value = val;
+      onNestVolumeInput(val);
+    }
+
+    // Odiseo Cast Backend API Communications (HTTP to port 4550)
+    function sendNestCastPlay(songId, title, startTime) {
+      fetch('http://100.117.169.38:4550/api/cast/play', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: songId, title: title, start_time: startTime })
+      }).catch(err => console.log('Odiseo Cast Play:', err));
+    }
+
+    function sendNestCastControl(action, extra = {}) {
+      fetch('http://100.117.169.38:4550/api/cast/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, ...extra })
+      }).catch(err => console.log('Odiseo Cast Control:', err));
+    }
+
+    function sendNestVolume(volFloat) {
+      sendNestCastControl("volume", { volume: volFloat });
+    }
+
+    // Tabs
+    function switchTab(tab) {
+      const playerView = document.getElementById('viewPlayer');
+      const libraryView = document.getElementById('viewLibrary');
+      const navPlayer = document.getElementById('navPlayer');
+      const navLibrary = document.getElementById('navLibrary');
+
+      if (tab === 'player') {
+        playerView.classList.remove('hidden');
+        playerView.classList.add('flex');
+        libraryView.classList.add('hidden');
+        libraryView.classList.remove('flex');
+        navPlayer.classList.add('text-emerald-400');
+        navPlayer.classList.remove('text-slate-400');
+        navLibrary.classList.remove('text-emerald-400');
+        navLibrary.classList.add('text-slate-400');
+      } else {
+        libraryView.classList.remove('hidden');
+        libraryView.classList.add('flex');
+        playerView.classList.add('hidden');
+        playerView.classList.remove('flex');
+        navLibrary.classList.add('text-emerald-400');
+        navLibrary.classList.remove('text-slate-400');
+        navPlayer.classList.remove('text-emerald-400');
+        navPlayer.classList.add('text-slate-400');
+      }
+    }
+
+    function toggleNetwork() {
+      isNetworkWifi = !isNetworkWifi;
+      const statusNet = document.getElementById('statusNetType');
+      const badgeQuality = document.getElementById('badgeQuality');
+      const badgeBitrate = document.getElementById('badgeBitrate');
+      const islandBadge = document.getElementById('islandBadge');
+      const islandExpandedCodec = document.getElementById('islandExpandedCodec');
+
+      if (isNetworkWifi) {
+        statusNet.innerText = "Wi-Fi";
+        badgeQuality.innerText = "FLAC 24/96";
+        badgeBitrate.innerText = "Direct";
+        islandBadge.innerText = "FLAC";
+        islandExpandedCodec.innerText = "FLAC 24-bit";
+      } else {
+        statusNet.innerText = "5G";
+        badgeQuality.innerText = "OPUS 160K";
+        badgeBitrate.innerText = "-82% Datos";
+        islandBadge.innerText = "OPUS";
+        islandExpandedCodec.innerText = "Opus 160 kbps";
+      }
+    }
+
+    function toggleLyrics() {
+      const lyrics = document.getElementById('viewLyrics');
+      lyrics.classList.toggle('hidden');
+      lyrics.classList.toggle('flex');
+    }
+
+    function toggleDiagnosticsModal() {
+      const modal = document.getElementById('modalDiagnostics');
+      modal.classList.toggle('hidden');
+      modal.classList.toggle('flex');
+    }
+
+    function updateProgressVisual() {
+      const pct = (currentSeconds / durationSeconds) * 100;
+      document.getElementById('progressBar').style.width = `${pct}%`;
+      const islandProg = document.getElementById('islandProgress');
+      if (islandProg) islandProg.style.width = `${pct}%`;
+
+      const m = Math.floor(currentSeconds / 60);
+      const s = String(currentSeconds % 60).padStart(2, '0');
+      document.getElementById('currentTime').innerText = `${m}:${s}`;
+    }
+
+    setInterval(() => {
+      if (isPlaying) {
+        currentSeconds++;
+        if (currentSeconds >= durationSeconds) {
+          nextTrack();
+        } else {
+          updateProgressVisual();
+        }
+      }
+    }, 1000);
+
+    function seekAudio(e) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const width = rect.width;
+      const pct = Math.max(0, Math.min(1, clickX / width));
+      currentSeconds = Math.floor(pct * durationSeconds);
+      updateProgressVisual();
+      if (isCastingNest) {
+        sendNestCastControl("seek", { time: currentSeconds });
+      }
+    }
+
+    // Canvas Aurora Background
+    const canvas = document.getElementById('auroraCanvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    function resizeCanvas() {
+      width = canvas.parentElement.clientWidth;
+      height = canvas.parentElement.clientHeight;
+      canvas.width = width;
+      canvas.height = height;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    let t = 0;
+    function renderAurora() {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, width, height);
+
+      const x1 = width * 0.3 + Math.sin(t * 0.001) * 80;
+      const y1 = height * 0.35 + Math.cos(t * 0.0015) * 60;
+      const grad1 = ctx.createRadialGradient(x1, y1, 10, x1, y1, width * 0.65);
+      grad1.addColorStop(0, 'rgba(34, 197, 94, 0.28)');
+      grad1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad1;
+      ctx.fillRect(0, 0, width, height);
+
+      const x2 = width * 0.7 + Math.cos(t * 0.0012) * 70;
+      const y2 = height * 0.55 + Math.sin(t * 0.0018) * 80;
+      const grad2 = ctx.createRadialGradient(x2, y2, 10, x2, y2, width * 0.7);
+      grad2.addColorStop(0, 'rgba(56, 189, 248, 0.24)');
+      grad2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad2;
+      ctx.fillRect(0, 0, width, height);
+
+      const x3 = width * 0.5 + Math.sin(t * 0.0008) * 60;
+      const y3 = height * 0.2 + Math.cos(t * 0.0011) * 40;
+      const grad3 = ctx.createRadialGradient(x3, y3, 10, x3, y3, width * 0.5);
+      grad3.addColorStop(0, 'rgba(129, 140, 248, 0.18)');
+      grad3.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad3;
+      ctx.fillRect(0, 0, width, height);
+
+      t += 16;
+      requestAnimationFrame(renderAurora);
+    }
+    renderAurora();
+  </script>
+</body>
+</html>
