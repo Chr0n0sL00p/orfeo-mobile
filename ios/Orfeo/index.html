@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Orfeo Mobile · Native Rust Core Engine</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <style>
+    :root {
+      --safe-top: env(safe-area-inset-top, 47px);
+      --safe-bottom: env(safe-area-inset-bottom, 34px);
+      --bg: #090c10;
+      --card-bg: rgba(26, 32, 44, 0.72);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.35);
+      --brand-green: #22c55e;
+      --gold: #f59e0b;
+      --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-system);
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
+    }
+
+    /* Dynamic Island Notch Simulation / Bar */
+    .dynamic-island-container {
+      position: fixed;
+      top: 11px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .dynamic-island {
+      background: #000;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      height: 35px;
+      min-width: 126px;
+      cursor: pointer;
+    }
+    .island-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--brand-green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--brand-green);
+      animation: pulse 2s infinite;
+    }
+    .island-eq {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 12px;
+    }
+    .island-bar {
+      width: 2.5px;
+      background: var(--accent);
+      border-radius: 1px;
+      animation: eqBar 0.9s ease-in-out infinite alternate;
+    }
+    .island-bar:nth-child(2) { animation-delay: 0.25s; height: 10px; }
+    .island-bar:nth-child(3) { animation-delay: 0.45s; height: 6px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+    @keyframes eqBar {
+      0% { height: 3px; }
+      100% { height: 12px; }
+    }
+
+    /* Main Container */
+    .app-main {
+      flex: 1;
+      padding-top: calc(var(--safe-top) + 16px);
+      padding-bottom: calc(var(--safe-bottom) + 90px);
+      padding-left: 18px;
+      padding-right: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Header */
+    .header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .app-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .app-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      object-fit: cover;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .app-name {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .status-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #4ade80;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Search Bar */
+    .search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 0 14px;
+      height: 44px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .search-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--text-muted);
+      margin-right: 10px;
+    }
+    .search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 15px;
+      font-family: inherit;
+    }
+    .search-input::placeholder {
+      color: var(--text-muted);
+    }
+    .search-clear {
+      background: rgba(255, 255, 255, 0.15);
+      border: none;
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    /* Info Bar & Category Pills */
+    .info-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--text-muted);
+      padding: 0 4px;
+    }
+    .pill-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .pill-tab {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .pill-tab.active {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Song List */
+    .song-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .song-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 10px;
+      border-radius: 14px;
+      background: transparent;
+      transition: background 0.15s ease;
+      cursor: pointer;
+    }
+    .song-item:active {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .song-item.active {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .song-cover-thumb {
+      width: 46px;
+      height: 46px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: rgba(255, 255, 255, 0.05);
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .song-details {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .song-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .song-item.active .song-title {
+      color: var(--accent);
+    }
+    .song-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .flac-badge {
+      font-size: 9px;
+      font-weight: 700;
+      background: rgba(245, 158, 11, 0.18);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 1px 4px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .song-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .song-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .song-btn-dots {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px;
+      cursor: pointer;
+    }
+
+    /* Floating Mini Player */
+    .mini-player-bar {
+      position: fixed;
+      bottom: calc(var(--safe-bottom) + 12px);
+      left: 14px;
+      right: 14px;
+      height: 64px;
+      background: rgba(18, 24, 38, 0.82);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 18px;
+      display: none;
+      align-items: center;
+      padding: 0 12px;
+      gap: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      z-index: 900;
+      cursor: pointer;
+      animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .mini-cover {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      object-fit: cover;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    .mini-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .mini-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-artist {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mini-btn {
+      background: transparent;
+      border: none;
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .mini-btn-play {
+      background: #fff;
+      color: #000;
+      box-shadow: 0 2px 10px rgba(255,255,255,0.25);
+    }
+
+    /* Full Screen Now Playing Modal */
+    .now-playing-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(10, 14, 22, 0.98);
+      backdrop-filter: blur(40px);
+      -webkit-backdrop-filter: blur(40px);
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      padding: calc(var(--safe-top) + 16px) 24px calc(var(--safe-bottom) + 20px) 24px;
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .now-playing-modal.active {
+      transform: translateY(0);
+    }
+    .np-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .np-handle {
+      width: 38px;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 3px;
+      margin: 0 auto;
+      cursor: pointer;
+    }
+    .np-cover-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      max-height: 46vh;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .np-cover {
+      width: 82vw;
+      max-width: 330px;
+      height: 82vw;
+      max-height: 330px;
+      border-radius: 22px;
+      object-fit: cover;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+    }
+    .np-glow {
+      position: absolute;
+      width: 75vw;
+      max-width: 300px;
+      height: 75vw;
+      max-height: 300px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.22;
+      filter: blur(45px);
+      z-index: -1;
+    }
+    .np-track-info {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .np-titles {
+      flex: 1;
+      min-width: 0;
+    }
+    .np-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+    .np-artist {
+      font-size: 16px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .np-scrubber-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 22px;
+    }
+    .scrubber-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.15);
+      outline: none;
+      cursor: pointer;
+    }
+    .scrubber-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      cursor: pointer;
+    }
+    .scrubber-times {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .np-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .np-btn {
+      background: transparent;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .np-btn-play {
+      width: 66px;
+      height: 66px;
+      border-radius: 50%;
+      background: #fff;
+      color: #000;
+      box-shadow: 0 4px 18px rgba(255, 255, 255, 0.28);
+    }
+    .np-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .output-device-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 6px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    /* Google Nest Mini Sheet */
+    .cast-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(18, 24, 36, 0.96);
+      backdrop-filter: blur(32px);
+      -webkit-backdrop-filter: blur(32px);
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px 24px 0 0;
+      padding: 20px 24px calc(var(--safe-bottom) + 20px) 24px;
+      z-index: 3000;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .cast-sheet.active {
+      transform: translateY(0);
+    }
+    .cast-device-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 14px 16px;
+      cursor: pointer;
+    }
+    .cast-device-card.active {
+      background: rgba(56, 189, 248, 0.14);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .cast-vol-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 16px;
+      padding: 14px 16px;
+    }
+
+    /* Toast */
+    .toast-msg {
+      position: fixed;
+      top: calc(var(--safe-top) + 60px);
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      backdrop-filter: blur(16px);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s ease;
+      z-index: 4000;
+    }
+    .toast-msg.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Dynamic Island Badge -->
+  <div class="dynamic-island-container" id="islandContainer" onclick="toggleNowPlayingModal(true)">
+    <div class="dynamic-island" id="dynamicIsland">
+      <div class="island-dot" id="islandDot"></div>
+      <span id="islandText">Orfeo · Odiseo</span>
+      <div class="island-eq" id="islandEq" style="display: none;">
+        <div class="island-bar"></div>
+        <div class="island-bar"></div>
+        <div class="island-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main View -->
+  <main class="app-main">
+    <header class="header-bar">
+      <div class="app-title-group">
+        <img src="icon.png" class="app-logo" alt="Orfeo" onerror="this.src='https://img.icons8.com/fluency/96/music.png'">
+        <h1 class="app-name">Orfeo</h1>
+      </div>
+      <div class="status-pill" id="statusPill" onclick="verificarConexion()">
+        <span style="font-size: 8px;">●</span>
+        <span id="statusLabel">Odiseo Live</span>
+      </div>
+    </header>
+
+    <!-- Search Box -->
+    <div class="search-box">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" class="search-input" id="searchInput" placeholder="Buscar entre 1,237 canciones..." oninput="filtrarCanciones(this.value)">
+      <button class="search-clear" id="searchClear" onclick="limpiarBusqueda()">✕</button>
+    </div>
+
+    <!-- Info Bar -->
+    <div class="info-bar">
+      <span id="songCountText">Cargando biblioteca...</span>
+      <div class="pill-tabs">
+        <button class="pill-tab active" onclick="filtrarCategoria('all', this)">Todas</button>
+        <button class="pill-tab" onclick="filtrarCategoria('flac', this)">FLAC Hi-Res</button>
+        <button class="pill-tab" onclick="filtrarCategoria('nest', this)">Nest Mini</button>
+      </div>
+    </div>
+
+    <!-- Song List Container -->
+    <section class="song-list" id="songList">
+      <!-- Injected via JavaScript -->
+    </section>
+  </main>
+
+  <!-- Floating Mini Player -->
+  <div class="mini-player-bar" id="miniPlayer" onclick="toggleNowPlayingModal(true)">
+    <img src="icon.png" class="mini-cover" id="miniCover" alt="Cover" onerror="this.src='icon.png'">
+    <div class="mini-info">
+      <div class="mini-title" id="miniTitle">Selecciona una pista</div>
+      <div class="mini-artist" id="miniArtist">Orfeo Player</div>
+    </div>
+    <div class="mini-controls" onclick="event.stopPropagation()">
+      <button class="mini-btn mini-btn-play" id="miniPlayBtn" onclick="togglePlay()">
+        <svg id="miniPlayIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </button>
+      <button class="mini-btn" onclick="nextTrack()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 4 15 12 5 20 5 4"></polygon>
+          <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Now Playing Full Screen Modal -->
+  <div class="now-playing-modal" id="nowPlayingModal">
+    <div class="np-header">
+      <button class="np-btn" onclick="toggleNowPlayingModal(false)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+      <div class="np-handle" onclick="toggleNowPlayingModal(false)"></div>
+      <button class="np-btn" onclick="abrirCastSheet()">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"></path>
+          <line x1="2" y1="20" x2="2.01" y2="20"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="np-cover-wrap">
+      <div class="np-glow" id="npGlow"></div>
+      <img src="icon.png" class="np-cover" id="npCover" alt="Cover" onerror="this.src='icon.png'">
+    </div>
+
+    <div class="np-track-info">
+      <div class="np-titles">
+        <div class="np-title" id="npTitle">Selecciona una pista</div>
+        <div class="np-artist" id="npArtist">Odiseo Navidrome Engine</div>
+      </div>
+      <button class="np-btn" onclick="toggleFavorito()">
+        <svg id="npFavIcon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="np-scrubber-box">
+      <input type="range" class="scrubber-slider" id="progressSlider" min="0" max="100" value="0" oninput="onScrubInput(this.value)" onchange="onScrubChange(this.value)">
+      <div class="scrubber-times">
+        <span id="timeCurrent">0:00</span>
+        <span id="timeRemaining">-0:00</span>
+      </div>
+    </div>
+
+    <div class="np-controls">
+      <button class="np-btn" id="btnShuffle" onclick="toggleShuffle()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 3 21 3 21 8"></polyline>
+          <line x1="4" y1="20" x2="21" y2="3"></line>
+          <polyline points="21 16 21 21 16 21"></polyline>
+          <line x1="15" y1="15" x2="21" y2="21"></line>
+          <line x1="4" y1="4" x2="9" y2="9"></line>
+        </svg>
+      </button>
+
+      <button class="np-btn" onclick="prevTrack()">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="19 20 9 12 19 4 19 20"></polygon>
+          <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5"></line>
+        </svg>
+      </button>
+
+      <button class="np-btn np-btn-play" id="npPlayBtn" onclick="togglePlay()">
+        <svg id="npPlayIcon" width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </button>
+
+      <button class="np-btn" onclick="nextTrack()">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 4 15 12 5 20 5 4"></polygon>
+          <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"></line>
+        </svg>
+      </button>
+
+      <button class="np-btn" id="btnRepeat" onclick="toggleRepeat()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="17 1 21 5 17 9"></polyline>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+          <polyline points="7 23 3 19 7 15"></polyline>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="np-footer">
+      <div class="output-device-btn" onclick="abrirCastSheet()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+          <line x1="12" y1="18" x2="12.01" y2="18"></line>
+        </svg>
+        <span id="outputDeviceName">iPhone 16 Speaker</span>
+      </div>
+      <div style="font-size: 11px; color: var(--gold); font-weight: 600;">FLAC Bit-Perfect</div>
+    </div>
+  </div>
+
+  <!-- Google Nest Mini Sheet -->
+  <div class="cast-sheet" id="castSheet">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 style="font-size:17px; font-weight:600;">Dispositivo de Salida</h3>
+      <button class="np-btn" onclick="cerrarCastSheet()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="cast-device-card active" id="cardIphone" onclick="seleccionarSalida('iphone')">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+          <line x1="12" y1="18" x2="12.01" y2="18"></line>
+        </svg>
+        <div>
+          <div style="font-size:15px; font-weight:600;">iPhone 16 (Local)</div>
+          <div style="font-size:12px; color:var(--text-muted);">Altavoces internos / Auriculares</div>
+        </div>
+      </div>
+      <span style="font-size:12px; color:var(--brand-green); font-weight:600;" id="checkIphone">● Activo</span>
+    </div>
+
+    <div class="cast-device-card" id="cardNest" onclick="seleccionarSalida('nest')">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        <div>
+          <div style="font-size:15px; font-weight:600;">Google Nest Mini</div>
+          <div style="font-size:12px; color:var(--text-muted);">Comedor @ 192.168.100.13</div>
+        </div>
+      </div>
+      <span style="font-size:12px; color:var(--text-muted); font-weight:600;" id="checkNest">Conectar</span>
+    </div>
+
+    <div class="cast-vol-box" id="nestVolBox" style="display: none;">
+      <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-muted);">
+        <span>Volumen Nest Mini</span>
+        <span id="nestVolLabel">50%</span>
+      </div>
+      <input type="range" class="scrubber-slider" id="nestVolSlider" min="0" max="100" value="50" oninput="ajustarVolumenNest(this.value)">
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-msg" id="toastMsg">Mensaje</div>
+
+  <!-- Native Audio Tag -->
+  <audio id="audioPlayer" preload="auto" playsinline webkit-playsinline></audio>
+
+  <script>
+    // --- CONFIGURACIÓN DE RED Y SERVIDOR ODISEO ---
+    const TAILSCALE_BASE = "http://100.117.169.38:4550";
+    const LOCAL_LAN_BASE = "http://192.168.100.92:4550";
+    let activeServerBase = (window.location.protocol.startsWith("http") && !window.location.host.includes("localhost"))
+      ? window.location.origin
+      : TAILSCALE_BASE;
+
+    // --- ESTADO GLOBAL DEL REPRODUCTOR ---
+    let allSongs = [];
+    let filteredSongs = [];
+    let currentIndex = -1;
+    let isPlaying = false;
+    let isShuffle = false;
+    let repeatMode = 0; // 0: none, 1: all, 2: one
+    let activeOutput = "iphone"; // "iphone" | "nest"
+    let isScrubbing = false;
+
+    const audio = document.getElementById("audioPlayer");
+    let preloadAudio = new Audio();
+    preloadAudio.preload = "auto";
+    let preloadedIndex = -1;
+
+    // --- INICIALIZACIÓN ---
+    window.addEventListener("DOMContentLoaded", () => {
+      determinarServidorOptimo();
+      setupAudioEvents();
+    });
+
+    async function determinarServidorOptimo() {
+      // Intentar LAN local por 600 ms para ultra baja latencia; si no, usar Tailscale
+      try {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 600);
+        const res = await fetch(`${LOCAL_LAN_BASE}/api/songs`, { signal: ctrl.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          activeServerBase = LOCAL_LAN_BASE;
+          document.getElementById("statusLabel").textContent = "LAN Odiseo (0 ms)";
+        }
+      } catch (e) {
+        activeServerBase = TAILSCALE_BASE;
+        document.getElementById("statusLabel").textContent = "Tailscale Live";
+      }
+      cargarBiblioteca();
+    }
+
+    async function cargarBiblioteca() {
+      showToast("Conectando con biblioteca...");
+      try {
+        const res = await fetch(`${activeServerBase}/api/songs`);
+        const data = await res.json();
+        allSongs = data.songs || [];
+        filteredSongs = [...allSongs];
+        document.getElementById("songCountText").textContent = `${allSongs.length} pistas disponibles`;
+        renderizarCanciones();
+        showToast(`✓ ${allSongs.length} canciones cargadas`);
+      } catch (err) {
+        console.error("Error al cargar canciones:", err);
+        showToast("Reintentando conexión con Odiseo...");
+        document.getElementById("songCountText").textContent = "Sin conexión a Odiseo";
+      }
+    }
+
+    function renderizarCanciones() {
+      const container = document.getElementById("songList");
+      if (filteredSongs.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted);">No se encontraron canciones</div>';
+        return;
+      }
+
+      const limit = Math.min(filteredSongs.length, 300);
+      let html = "";
+      for (let i = 0; i < limit; i++) {
+        const s = filteredSongs[i];
+        const isActive = (currentIndex === i);
+        const coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : "icon.png";
+        const durationFormatted = formatTime(s.duration || 0);
+
+        html += `
+          <div class="song-item ${isActive ? 'active' : ''}" onclick="seleccionarCancion(${i})">
+            <img class="song-cover-thumb" src="${coverSrc}" loading="lazy" alt="Cover" onerror="this.src='icon.png'">
+            <div class="song-details">
+              <div class="song-title">${escapeHtml(s.title)}</div>
+              <div class="song-meta">
+                <span class="flac-badge">FLAC</span>
+                <span>${escapeHtml(s.artist)}</span>
+              </div>
+            </div>
+            <div class="song-actions">
+              <span class="song-time">${durationFormatted}</span>
+            </div>
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    // --- MOTOR DE REPRODUCCIÓN ---
+    function seleccionarCancion(index) {
+      if (index < 0 || index >= filteredSongs.length) return;
+      currentIndex = index;
+      reproducirPistaActual();
+    }
+
+    function reproducirPistaActual() {
+      const s = filteredSongs[currentIndex];
+      if (!s) return;
+
+      triggerHaptic();
+
+      if (activeOutput === "nest") {
+        transmitirANestMini(s.id);
+        actualizarUI(s);
+        return;
+      }
+
+      // Reproducción Local
+      const streamUrl = `${activeServerBase}/api/stream/${s.id}`;
+      if (audio.src !== streamUrl) {
+        audio.src = streamUrl;
+      }
+      
+      audio.play().then(() => {
+        isPlaying = true;
+        actualizarUI(s);
+        actualizarMediaSession(s);
+        notifySwiftNowPlaying(s, true);
+      }).catch(err => {
+        console.warn("Autoplay bloqueado:", err);
+      });
+    }
+
+    function togglePlay() {
+      triggerHaptic();
+      if (currentIndex === -1) {
+        if (filteredSongs.length > 0) seleccionarCancion(0);
+        return;
+      }
+
+      if (activeOutput === "nest") {
+        const action = isPlaying ? "pause" : "resume";
+        fetch(`${activeServerBase}/api/cast/control`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: action })
+        }).then(() => {
+          isPlaying = !isPlaying;
+          actualizarBotonesPlay();
+        });
+        return;
+      }
+
+      if (audio.paused) {
+        audio.play().then(() => {
+          isPlaying = true;
+          actualizarBotonesPlay();
+          notifySwiftNowPlaying(filteredSongs[currentIndex], true);
+        });
+      } else {
+        audio.pause();
+        isPlaying = false;
+        actualizarBotonesPlay();
+        notifySwiftNowPlaying(filteredSongs[currentIndex], false);
+      }
+    }
+
+    function nextTrack() {
+      triggerHaptic();
+      if (filteredSongs.length === 0) return;
+
+      if (isShuffle) {
+        currentIndex = Math.floor(Math.random() * filteredSongs.length);
+      } else {
+        currentIndex = (currentIndex + 1) % filteredSongs.length;
+      }
+      reproducirPistaActual();
+      renderizarCanciones();
+    }
+
+    function prevTrack() {
+      triggerHaptic();
+      if (audio.currentTime > 3) {
+        audio.currentTime = 0;
+        return;
+      }
+      if (currentIndex > 0) {
+        currentIndex--;
+      } else {
+        currentIndex = filteredSongs.length - 1;
+      }
+      reproducirPistaActual();
+      renderizarCanciones();
+    }
+
+    function seekAudioExact(sec) {
+      if (audio && audio.duration) {
+        audio.currentTime = sec;
+      }
+    }
+
+    // --- EVENTOS DE AUDIO ---
+    function setupAudioEvents() {
+      audio.addEventListener("play", () => {
+        isPlaying = true;
+        actualizarBotonesPlay();
+        document.getElementById("islandEq").style.display = "flex";
+      });
+
+      audio.addEventListener("pause", () => {
+        isPlaying = false;
+        actualizarBotonesPlay();
+        document.getElementById("islandEq").style.display = "none";
+      });
+
+      audio.addEventListener("ended", () => {
+        if (repeatMode === 2) {
+          audio.currentTime = 0;
+          audio.play();
+        } else {
+          nextTrack();
+        }
+      });
+
+      audio.addEventListener("timeupdate", () => {
+        if (isScrubbing || !audio.duration) return;
+        const current = audio.currentTime;
+        const total = audio.duration;
+        const pct = (current / total) * 100;
+
+        document.getElementById("progressSlider").value = pct;
+        document.getElementById("timeCurrent").textContent = formatTime(current);
+        document.getElementById("timeRemaining").textContent = `-${formatTime(total - current)}`;
+
+        // Pre-buffering gapless 15 segundos antes
+        if (total > 20 && current >= (total - 15) && preloadedIndex !== currentIndex + 1) {
+          prebufferSiguiente();
+        }
+      });
+    }
+
+    function prebufferSiguiente() {
+      const nextIdx = (currentIndex + 1) % filteredSongs.length;
+      const nextSong = filteredSongs[nextIdx];
+      if (nextSong) {
+        preloadAudio.src = `${activeServerBase}/api/stream/${nextSong.id}`;
+        preloadedIndex = nextIdx;
+      }
+    }
+
+    function onScrubInput(val) {
+      isScrubbing = true;
+      if (audio.duration) {
+        const cur = (val / 100) * audio.duration;
+        document.getElementById("timeCurrent").textContent = formatTime(cur);
+      }
+    }
+
+    function onScrubChange(val) {
+      if (audio.duration) {
+        audio.currentTime = (val / 100) * audio.duration;
+      }
+      isScrubbing = false;
+    }
+
+    // --- ACTUALIZACIÓN DE UI ---
+    function actualizarUI(s) {
+      const coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : "icon.png";
+      
+      // Mini Player
+      document.getElementById("miniPlayer").style.display = "flex";
+      document.getElementById("miniCover").src = coverSrc;
+      document.getElementById("miniTitle").textContent = s.title;
+      document.getElementById("miniArtist").textContent = s.artist;
+
+      // Now Playing Modal
+      document.getElementById("npCover").src = coverSrc;
+      document.getElementById("npTitle").textContent = s.title;
+      document.getElementById("npArtist").textContent = s.artist;
+
+      // Dynamic Island
+      document.getElementById("islandText").textContent = `${s.title.substring(0, 16)}...`;
+
+      actualizarBotonesPlay();
+    }
+
+    function actualizarBotonesPlay() {
+      const playSvg = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      const pauseSvg = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      
+      const iconContent = isPlaying ? pauseSvg : playSvg;
+      document.getElementById("miniPlayIcon").innerHTML = iconContent;
+      document.getElementById("npPlayIcon").innerHTML = iconContent;
+    }
+
+    // --- INTEGRACIÓN SWIFT NATIVA Y MEDIASESSION ---
+    function notifySwiftNowPlaying(s, playingState) {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.orfeoNative) {
+        window.webkit.messageHandlers.orfeoNative.postMessage({
+          action: "updateNowPlaying",
+          title: s ? s.title : "",
+          artist: s ? s.artist : "",
+          duration: audio ? (audio.duration || s.duration || 0) : 0,
+          elapsed: audio ? audio.currentTime : 0,
+          isPlaying: !!playingState
+        });
+      }
+    }
+
+    function triggerHaptic() {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.orfeoNative) {
+        window.webkit.messageHandlers.orfeoNative.postMessage({ action: "haptic" });
+      }
+    }
+
+    function actualizarMediaSession(s) {
+      if ("mediaSession" in navigator) {
+        const coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : `${window.location.origin}/icon.png`;
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: s.title,
+          artist: s.artist,
+          album: s.album || "Odiseo Music",
+          artwork: [{ src: coverSrc, sizes: "512x512", type: "image/jpeg" }]
+        });
+        navigator.mediaSession.setActionHandler("play", () => togglePlay());
+        navigator.mediaSession.setActionHandler("pause", () => togglePlay());
+        navigator.mediaSession.setActionHandler("previoustrack", () => prevTrack());
+        navigator.mediaSession.setActionHandler("nexttrack", () => nextTrack());
+      }
+    }
+
+    // --- GOOGLE NEST MINI (CAST) ---
+    async function transmitirANestMini(songId) {
+      showToast("Conectando con Google Nest Mini (Comedor)...");
+      try {
+        const res = await fetch(`${activeServerBase}/api/cast/play`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: songId })
+        });
+        const d = await res.json();
+        if (d.ok) {
+          showToast("Transmitiendo a Google Nest Mini");
+          isPlaying = true;
+          actualizarBotonesPlay();
+        }
+      } catch (err) {
+        showToast("Error de conexión con Nest Mini");
+      }
+    }
+
+    let nestVolDebounce = null;
+    function ajustarVolumenNest(val) {
+      document.getElementById("nestVolLabel").textContent = `${val}%`;
+      clearTimeout(nestVolDebounce);
+      nestVolDebounce = setTimeout(() => {
+        fetch(`${activeServerBase}/api/cast/control`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "volume", volume: val / 100 })
+        });
+      }, 150);
+    }
+
+    function seleccionarSalida(tipo) {
+      triggerHaptic();
+      activeOutput = tipo;
+      if (tipo === "iphone") {
+        document.getElementById("cardIphone").classList.add("active");
+        document.getElementById("cardNest").classList.remove("active");
+        document.getElementById("checkIphone").textContent = "● Activo";
+        document.getElementById("checkIphone").style.color = "var(--brand-green)";
+        document.getElementById("checkNest").textContent = "Conectar";
+        document.getElementById("checkNest").style.color = "var(--text-muted)";
+        document.getElementById("outputDeviceName").textContent = "iPhone 16 Speaker";
+        document.getElementById("nestVolBox").style.display = "none";
+
+        // Parar Nest si estaba reproduciendo
+        fetch(`${activeServerBase}/api/cast/control`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "stop" })
+        });
+        if (currentIndex !== -1) reproducirPistaActual();
+      } else {
+        document.getElementById("cardNest").classList.add("active");
+        document.getElementById("cardIphone").classList.remove("active");
+        document.getElementById("checkNest").textContent = "● Transmitiendo";
+        document.getElementById("checkNest").style.color = "var(--brand-green)";
+        document.getElementById("checkIphone").textContent = "Seleccionar";
+        document.getElementById("checkIphone").style.color = "var(--text-muted)";
+        document.getElementById("outputDeviceName").textContent = "Google Nest Mini (Comedor)";
+        document.getElementById("nestVolBox").style.display = "flex";
+
+        audio.pause();
+        if (currentIndex !== -1) reproducirPistaActual();
+      }
+      setTimeout(() => cerrarCastSheet(), 400);
+    }
+
+    function abrirCastSheet() {
+      triggerHaptic();
+      document.getElementById("castSheet").classList.add("active");
+    }
+    function cerrarCastSheet() {
+      document.getElementById("castSheet").classList.remove("active");
+    }
+
+    // --- MODALES Y NAVEGACIÓN ---
+    function toggleNowPlayingModal(show) {
+      triggerHaptic();
+      const modal = document.getElementById("nowPlayingModal");
+      if (show) modal.classList.add("active");
+      else modal.classList.remove("active");
+    }
+
+    function toggleShuffle() {
+      triggerHaptic();
+      isShuffle = !isShuffle;
+      document.getElementById("btnShuffle").style.color = isShuffle ? "var(--accent)" : "#fff";
+      showToast(isShuffle ? "Aleatorio activado" : "Aleatorio desactivado");
+    }
+
+    function toggleRepeat() {
+      triggerHaptic();
+      repeatMode = (repeatMode + 1) % 3;
+      const btn = document.getElementById("btnRepeat");
+      if (repeatMode === 0) {
+        btn.style.color = "#fff";
+        showToast("Repetir desactivado");
+      } else if (repeatMode === 1) {
+        btn.style.color = "var(--accent)";
+        showToast("Repetir lista");
+      } else {
+        btn.style.color = "var(--gold)";
+        showToast("Repetir una pista");
+      }
+    }
+
+    function toggleFavorito() {
+      triggerHaptic();
+      const icon = document.getElementById("npFavIcon");
+      const isFav = icon.getAttribute("fill") === "currentColor";
+      if (isFav) {
+        icon.setAttribute("fill", "none");
+        showToast("Eliminado de favoritos");
+      } else {
+        icon.setAttribute("fill", "currentColor");
+        icon.style.color = "#ef4444";
+        showToast("Añadido a favoritos ❤️");
+      }
+    }
+
+    // --- BÚSQUEDA Y FILTRADO ---
+    function filtrarCanciones(query) {
+      const clean = query.trim().toLowerCase();
+      document.getElementById("searchClear").style.display = clean ? "flex" : "none";
+
+      if (!clean) {
+        filteredSongs = [...allSongs];
+      } else {
+        filteredSongs = allSongs.filter(s => 
+          (s.title && s.title.toLowerCase().includes(clean)) ||
+          (s.artist && s.artist.toLowerCase().includes(clean)) ||
+          (s.album && s.album.toLowerCase().includes(clean))
+        );
+      }
+      document.getElementById("songCountText").textContent = `${filteredSongs.length} resultados`;
+      renderizarCanciones();
+    }
+
+    function limpiarBusqueda() {
+      document.getElementById("searchInput").value = "";
+      filtrarCanciones("");
+    }
+
+    function filtrarCategoria(cat, btn) {
+      triggerHaptic();
+      document.querySelectorAll(".pill-tab").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+
+      if (cat === "all") {
+        filteredSongs = [...allSongs];
+      } else if (cat === "flac") {
+        // En tu servidor Odiseo las pistas están en alta fidelidad / FLAC
+        filteredSongs = allSongs.filter(s => s.duration > 30);
+      } else if (cat === "nest") {
+        abrirCastSheet();
+        return;
+      }
+      document.getElementById("songCountText").textContent = `${filteredSongs.length} canciones`;
+      renderizarCanciones();
+    }
+
+    function verificarConexion() {
+      determinarServidorOptimo();
+    }
+
+    // --- UTILIDADES ---
+    function formatTime(sec) {
+      if (!sec || isNaN(sec)) return "0:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60).toString().padStart(2, "0");
+      return `${m}:${s}`;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const t = document.getElementById("toastMsg");
+      t.textContent = msg;
+      t.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+    }
+  </script>
+</body>
+</html>
