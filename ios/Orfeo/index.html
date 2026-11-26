@@ -613,27 +613,57 @@
       flex-direction: column;
       gap: 8px;
       margin-bottom: 22px;
-      padding: 6px 0;
-      touch-action: pan-x;
+      padding: 10px 0;
+      cursor: pointer;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    .scrubber-slider {
-      -webkit-appearance: none;
+    .scrubber-bar-container {
+      position: relative;
       width: 100%;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      touch-action: none;
+    }
+    .scrubber-bar-bg {
+      position: absolute;
+      left: 0;
+      right: 0;
       height: 6px;
       border-radius: 3px;
-      background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 0%), rgba(255, 255, 255, 0.18) var(--progress, 0%), rgba(255, 255, 255, 0.18) 100%);
-      outline: none;
-      cursor: pointer;
-      touch-action: pan-x;
+      background: rgba(255, 255, 255, 0.18);
+      pointer-events: none;
     }
-    .scrubber-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
+    .scrubber-bar-fill {
+      position: absolute;
+      left: 0;
+      top: calc(50% - 3px);
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #38bdf8 0%, #0ea5e9 100%);
+      width: 0%;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+      pointer-events: none;
+    }
+    .scrubber-thumb {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      transform: translate(-50%, -50%);
       width: 18px;
       height: 18px;
       border-radius: 50%;
       background: #ffffff;
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.65), 0 2px 6px rgba(0,0,0,0.5);
-      cursor: pointer;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.8), 0 2px 6px rgba(0, 0, 0, 0.7);
+      pointer-events: none;
+      transition: transform 0.12s ease;
+    }
+    .np-scrubber-box.is-scrubbing .scrubber-thumb {
+      transform: translate(-50%, -50%) scale(1.35);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 1), 0 3px 8px rgba(0, 0, 0, 0.8);
     }
     .scrubber-times {
       display: flex;
@@ -1225,8 +1255,12 @@
       </button>
     </div>
 
-    <div class="np-scrubber-box" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()">
-      <input type="range" class="scrubber-slider" id="progressSlider" min="0" max="100" value="0" oninput="onScrubInput(this.value)" onchange="onScrubChange(this.value)" ontouchstart="event.stopPropagation()" ontouchmove="event.stopPropagation()" ontouchend="event.stopPropagation()">
+    <div class="np-scrubber-box" id="npScrubberBox">
+      <div class="scrubber-bar-container" id="scrubberBarContainer">
+        <div class="scrubber-bar-bg"></div>
+        <div class="scrubber-bar-fill" id="scrubberBarFill"></div>
+        <div class="scrubber-thumb" id="scrubberThumb"></div>
+      </div>
       <div class="scrubber-times">
         <span id="timeCurrent">0:00</span>
         <span id="timeRemaining">-0:00</span>
@@ -1711,6 +1745,7 @@
     window.addEventListener("DOMContentLoaded", () => {
       initOfflineDB().then(() => iniciarCargaConSplash());
       setupAudioEvents();
+      setupCustomScrubber();
       setupNowPlayingDismissGesture();
     });
 
@@ -2144,7 +2179,7 @@
       let gestureChecked = false;
 
       modal.addEventListener("touchstart", (e) => {
-        if (e.target.closest(".np-scrubber-box") || e.target.closest(".scrubber-slider") || e.target.closest(".np-controls") || e.target.closest(".np-footer") || e.target.closest(".np-btn-play") || e.target.closest(".np-btn")) return;
+        if (e.target.closest("#npScrubberBox") || e.target.closest(".np-scrubber-box") || e.target.closest(".np-controls") || e.target.closest(".np-footer") || e.target.closest(".np-btn-play") || e.target.closest(".np-btn")) return;
         startY = e.touches[0].clientY;
         startX = e.touches[0].clientX;
         currentY = startY;
@@ -2154,7 +2189,7 @@
       }, { passive: true });
 
       modal.addEventListener("touchmove", (e) => {
-        if (e.target.closest(".np-scrubber-box") || e.target.closest(".scrubber-slider") || !startY) return;
+        if (e.target.closest("#npScrubberBox") || e.target.closest(".np-scrubber-box") || !startY) return;
         currentY = e.touches[0].clientY;
         const currentX = e.touches[0].clientX;
         const diffY = currentY - startY;
@@ -2244,18 +2279,18 @@
       });
 
       audio.addEventListener("timeupdate", () => {
-        if (isScrubbing || !audio.duration) return;
+        if (isScrubbing || !audio.duration || isNaN(audio.duration)) return;
         const current = audio.currentTime;
         const total = audio.duration;
         const pct = (current / total) * 100;
 
-        const pSlider = document.getElementById("progressSlider");
-        if (pSlider) {
-          pSlider.value = pct;
-          pSlider.style.setProperty("--progress", `${pct}%`);
-        }
+        const fill = document.getElementById("scrubberBarFill");
+        const thumb = document.getElementById("scrubberThumb");
+        if (fill) fill.style.width = `${pct}%`;
+        if (thumb) thumb.style.left = `${pct}%`;
+
         document.getElementById("timeCurrent").textContent = formatTime(current);
-        document.getElementById("timeRemaining").textContent = `-${formatTime(total - current)}`;
+        document.getElementById("timeRemaining").textContent = `-${formatTime(Math.max(0, total - current))}`;
 
         // Pre-buffering gapless 15 segundos antes
         if (total > 20 && current >= (total - 15)) {
@@ -2269,24 +2304,101 @@
       });
     }
 
-    function onScrubInput(val) {
-      isScrubbing = true;
-      const pSlider = document.getElementById("progressSlider");
-      if (pSlider) pSlider.style.setProperty("--progress", `${val}%`);
-      if (audio && audio.duration) {
-        const cur = (val / 100) * audio.duration;
-        document.getElementById("timeCurrent").textContent = formatTime(cur);
-        document.getElementById("timeRemaining").textContent = `-${formatTime(audio.duration - cur)}`;
-      }
-    }
+    function setupCustomScrubber() {
+      const box = document.getElementById("npScrubberBox");
+      const container = document.getElementById("scrubberBarContainer");
+      const fill = document.getElementById("scrubberBarFill");
+      const thumb = document.getElementById("scrubberThumb");
+      if (!box || !container || !fill || !thumb) return;
 
-    function onScrubChange(val) {
-      if (audio && audio.duration) {
-        audio.currentTime = (val / 100) * audio.duration;
+      let isDragging = false;
+
+      function updateFromClientX(clientX, commit) {
+        if (!audio || !audio.duration || isNaN(audio.duration)) return;
+        const rect = container.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        let ratio = (clientX - rect.left) / rect.width;
+        ratio = Math.max(0, Math.min(1, ratio));
+        const pct = ratio * 100;
+
+        fill.style.width = `${pct}%`;
+        thumb.style.left = `${pct}%`;
+
+        const curTime = ratio * audio.duration;
+        const total = audio.duration;
+        document.getElementById("timeCurrent").textContent = formatTime(curTime);
+        document.getElementById("timeRemaining").textContent = `-${formatTime(Math.max(0, total - curTime))}`;
+
+        if (commit) {
+          audio.currentTime = curTime;
+        }
       }
-      const pSlider = document.getElementById("progressSlider");
-      if (pSlider) pSlider.style.setProperty("--progress", `${val}%`);
-      setTimeout(() => { isScrubbing = false; }, 120);
+
+      box.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isScrubbing = true;
+        isDragging = true;
+        box.classList.add("is-scrubbing");
+        if (e.touches && e.touches[0]) {
+          updateFromClientX(e.touches[0].clientX, false);
+        }
+      }, { passive: false });
+
+      window.addEventListener("touchmove", (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.touches && e.touches[0]) {
+          updateFromClientX(e.touches[0].clientX, false);
+        }
+      }, { passive: false });
+
+      window.addEventListener("touchend", (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        e.stopPropagation();
+        isDragging = false;
+        box.classList.remove("is-scrubbing");
+        const touch = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : null;
+        if (touch) {
+          updateFromClientX(touch.clientX, true);
+        }
+        setTimeout(() => { isScrubbing = false; }, 120);
+      }, { passive: false });
+
+      window.addEventListener("touchcancel", () => {
+        if (!isDragging) return;
+        isDragging = false;
+        box.classList.remove("is-scrubbing");
+        isScrubbing = false;
+      });
+
+      box.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isScrubbing = true;
+        isDragging = true;
+        box.classList.add("is-scrubbing");
+        updateFromClientX(e.clientX, false);
+
+        function onMouseMove(ev) {
+          if (!isDragging) return;
+          ev.preventDefault();
+          updateFromClientX(ev.clientX, false);
+        }
+        function onMouseUp(ev) {
+          if (!isDragging) return;
+          isDragging = false;
+          box.classList.remove("is-scrubbing");
+          updateFromClientX(ev.clientX, true);
+          setTimeout(() => { isScrubbing = false; }, 120);
+          window.removeEventListener("mousemove", onMouseMove);
+          window.removeEventListener("mouseup", onMouseUp);
+        }
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+      });
     }
 
     // --- ACTUALIZACIÓN DE UI ---
@@ -2303,6 +2415,10 @@
       document.getElementById("npCover").src = coverSrc;
       document.getElementById("npTitle").textContent = s.title;
       document.getElementById("npArtist").textContent = s.artist;
+      const sFill = document.getElementById("scrubberBarFill");
+      const sThumb = document.getElementById("scrubberThumb");
+      if (sFill) sFill.style.width = "0%";
+      if (sThumb) sThumb.style.left = "0%";
 
       // Si la pista tiene portada descargada en el iPhone, mostrar el blob local (0 ms, offline)
       if (downloadedSongIds.has(s.id)) {
