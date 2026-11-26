@@ -1212,6 +1212,10 @@
         <img class="sheet-cover" id="sheetCover" src="icon.png" alt="Cover" onerror="this.src='icon.png'">
         <div style="flex:1; min-width:0;">
           <div class="sheet-title" id="sheetTitle">Canción</div>
+          <div class="sheet-artist" id="sheetArtist">Artista</div>
+        </div>
+      </div>
+
       <div class="sheet-item" onclick="accionReproducir()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -1946,11 +1950,15 @@
       menuSongTarget = song;
 
       const coverSrc = song.has_cover ? `${activeServerBase}/api/cover/${song.id}` : "icon.png";
-      document.getElementById("sheetCover").src = coverSrc;
-      document.getElementById("sheetTitle").textContent = song.title;
-      document.getElementById("sheetArtist").textContent = song.artist;
+      const coverEl = document.getElementById("sheetCover");
+      const titleEl = document.getElementById("sheetTitle");
+      const artistEl = document.getElementById("sheetArtist");
+      const overlayEl = document.getElementById("sheetOverlay");
 
-      document.getElementById("sheetOverlay").classList.add("active");
+      if (coverEl) coverEl.src = coverSrc;
+      if (titleEl) titleEl.textContent = song.title;
+      if (artistEl) artistEl.textContent = song.artist;
+      if (overlayEl) overlayEl.classList.add("active");
     }
 
     function abrirMenuParaCancionActual() {
