@@ -1546,7 +1546,7 @@
     }
 
     // --- GESTOS DE DESLIZAMIENTO TÁCTIL ---
-            function attachSwipeEvents() {
+                function attachSwipeEvents() {
       const rows = document.querySelectorAll(".song-item");
       rows.forEach(item => {
         let startX = 0;
@@ -1557,7 +1557,6 @@
         let gestureChecked = false;
 
         item.addEventListener("touchstart", (e) => {
-          // Si el toque fue en los 3 puntos o acciones, NO interferir con el botón!
           if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) {
             return;
           }
@@ -1577,31 +1576,37 @@
           const diffX = currentX - startX;
           const diffY = currentY - startY;
 
-          if (!gestureChecked && (Math.abs(diffX) > 12 || Math.abs(diffY) > 12)) {
+          if (!gestureChecked && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
             gestureChecked = true;
+            // Si el movimiento es vertical, permitir el scroll normal de la lista
             if (Math.abs(diffY) > Math.abs(diffX)) {
               isHorizontalSwipe = false;
               return;
             }
-            if (diffX > 15) {
+            // Si el movimiento es horizontal hacia la derecha, activar swipe
+            if (diffX > 12) {
               isHorizontalSwipe = true;
               const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
               if (bg) bg.style.display = "flex";
             }
           }
 
-          if (isHorizontalSwipe && diffX > 0) {
-            const drag = Math.min(diffX - 15, 110);
-            item.style.transform = `translateX(${drag}px)`;
+          if (isHorizontalSwipe) {
+            // BLOQUEO ESTRICTO: Previene que la lista de canciones haga scroll vertical mientras arrastras a la cola!
+            if (e.cancelable) e.preventDefault();
+            if (diffX > 0) {
+              const drag = Math.min(diffX - 12, 110);
+              item.style.transform = `translateX(${drag}px)`;
+            }
           }
-        }, { passive: true });
+        }, { passive: false });
 
         item.addEventListener("touchend", (e) => {
           if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
           item.style.transition = "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)";
           const diffX = currentX - startX;
 
-          if (isHorizontalSwipe && diffX > 90) {
+          if (isHorizontalSwipe && diffX > 85) {
             const songId = item.getAttribute("data-id");
             const song = allSongs.find(s => s.id === songId);
             if (song) {
