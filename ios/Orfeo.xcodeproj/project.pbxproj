@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		1A0001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0001 /* AppDelegate.swift */; };
-		1A0002 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 2A0002 /* Info.plist */; };
 		1A0003 /* frontend in Resources */ = {isa = PBXBuildFile; fileRef = 2A0003 /* frontend */; };
 		1A0004 /* liborfeo_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2A0004 /* liborfeo_core.a */; };
 /* End PBXBuildFile section */
@@ -121,7 +120,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A0002 /* Info.plist in Resources */,
 				1A0003 /* frontend in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
