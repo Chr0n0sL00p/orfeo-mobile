@@ -1480,11 +1480,19 @@
     </div>
 
     <div class="cast-vol-box" id="nestVolBox" style="display: none;">
-      <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-muted);">
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--text-muted); margin-bottom:6px;">
         <span>Volumen Nest Mini</span>
-        <span id="nestVolLabel">50%</span>
+        <span id="nestVolLabel" style="color:#fff; font-weight:600;">50%</span>
       </div>
-      <input type="range" class="scrubber-slider" id="nestVolSlider" min="0" max="100" value="50" oninput="ajustarVolumenNest(this.value)">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="np-btn" style="width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,0.08); font-size:18px; font-weight:700;" onclick="stepVolumenNest(-10)">−</button>
+        <input type="range" class="scrubber-slider" id="nestVolSlider" style="flex:1;" min="0" max="100" value="50"
+          ontouchstart="isAdjustingNestVol=true" onmousedown="isAdjustingNestVol=true"
+          oninput="ajustarVolumenNest(this.value)"
+          onchange="finalizarVolumenNest(this.value)"
+          ontouchend="finalizarVolumenNest(this.value)" onmouseup="finalizarVolumenNest(this.value)">
+        <button class="np-btn" style="width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,0.08); font-size:18px; font-weight:700;" onclick="stepVolumenNest(10)">+</button>
+      </div>
     </div>
   </div>
 
@@ -1509,10 +1517,31 @@
     let currentIndex = -1;
     let menuSongTarget = null;
     let isPlaying = false;
+    let wasInterruptedWhilePlaying = false;
+    let userManuallyPaused = false;
+    let interruptionResumeTimer = null;
     let isShuffle = false;
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
     let isScrubbing = false;
+    let castState = {
+      connected: false,
+      state: "IDLE",
+      currentTime: 0,
+      duration: 0,
+      volume: 0.5,
+      songId: null,
+      lastSyncAt: 0,
+      playLockUntil: 0,
+      seekLockUntil: 0,
+      hasSeenActiveForToken: false,
+      finishedHandledToken: 0,
+      playToken: 0
+    };
+    let castPollTimer = null;
+    let castTickTimer = null;
+    let castSyncInFlight = false;
+    let isAdjustingNestVol = false;
     let playbackHistory = [];
     let isNavigatingHistory = false;
 
@@ -2016,12 +2045,14 @@
       if (cur) cur.classList.add('active');
     }
 
-    function reproducirPistaActual() {
+    function reproducirPistaActual(startTime = 0) {
       if (currentIndex < 0 || currentIndex >= filteredSongs.length) return;
       const s = filteredSongs[currentIndex];
       if (!s) return;
 
       triggerHaptic();
+      userManuallyPaused = false;
+      wasInterruptedWhilePlaying = false;
 
       // 1. ACTUALIZACIÓN INMEDIATA DE UI (0 ms de espera): Mini Player y Now Playing se actualizan al instante
       actualizarUI(s);
@@ -2029,7 +2060,7 @@
       actualizarBotonesPlay();
 
       if (activeOutput === "nest") {
-        transmitirANestMini(s.id);
+        transmitirANestMini(s.id, startTime);
         return;
       }
 
@@ -2098,31 +2129,70 @@
       }
     }
 
-    function togglePlay() {
+    function togglePlay(forceState) {
       triggerHaptic();
       if (currentIndex === -1) {
         if (filteredSongs.length > 0) seleccionarPorId(filteredSongs[0].id);
         return;
       }
 
+      // Si el usuario pausó o reanudó explícitamente:
+      if (typeof forceState === "boolean") {
+        if (!forceState) {
+          userManuallyPaused = true;
+          wasInterruptedWhilePlaying = false;
+        } else {
+          userManuallyPaused = false;
+        }
+      } else {
+        if (isPlaying) {
+          userManuallyPaused = true;
+          wasInterruptedWhilePlaying = false;
+        } else {
+          userManuallyPaused = false;
+        }
+      }
+
       if (activeOutput === "nest") {
         const action = isPlaying ? "pause" : "resume";
+        const nowElapsed = getCastElapsed();
+        castState.currentTime = nowElapsed;
+        castState.lastSyncAt = Date.now();
+        castState.playLockUntil = Date.now() + 2600;
+        isPlaying = !isPlaying;
+        castState.state = isPlaying ? "PLAYING" : "PAUSED";
+        actualizarBotonesPlay();
+        updateCastProgressUI(true);
+        const s = filteredSongs[currentIndex];
+        if (s) {
+          notifySwiftNowPlaying(s, isPlaying);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+        }
+
         fetch(`${activeServerBase}/api/cast/control`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: action })
-        }).then(() => {
-          isPlaying = !isPlaying;
-          actualizarBotonesPlay();
-        });
+        }).then(r => r.json()).then(d => {
+          if (d && d.status && typeof d.status.current_time === "number") {
+            castState.currentTime = d.status.current_time;
+            castState.lastSyncAt = Date.now();
+          }
+        }).catch(err => console.warn("[Cast Toggle Error]", err));
         return;
       }
 
       if (audio.paused) {
         audio.play().then(() => {
           isPlaying = true;
+          userManuallyPaused = false;
+          wasInterruptedWhilePlaying = false;
           actualizarBotonesPlay();
-          notifySwiftNowPlaying(filteredSongs[currentIndex], true);
+          const s = filteredSongs[currentIndex];
+          if (s) {
+            notifySwiftNowPlaying(s, true);
+            if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+          }
         }).catch(err => {
           console.warn("Error al reanudar:", err);
           reproducirPistaActual();
@@ -2130,8 +2200,14 @@
       } else {
         audio.pause();
         isPlaying = false;
+        userManuallyPaused = true;
+        wasInterruptedWhilePlaying = false;
         actualizarBotonesPlay();
-        notifySwiftNowPlaying(filteredSongs[currentIndex], false);
+        const s = filteredSongs[currentIndex];
+        if (s) {
+          notifySwiftNowPlaying(s, false);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+        }
       }
     }
 
@@ -2292,12 +2368,27 @@
         isPlaying = true;
         actualizarBotonesPlay();
         const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "flex";
+        const s = filteredSongs[currentIndex];
+        if (s) {
+          notifySwiftNowPlaying(s, true);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+        }
       });
 
       audio.addEventListener("pause", () => {
+        // Si el audio fue pausado por el sistema o por otra app (audio/video de WhatsApp, YouTube, etc.)
+        if (!userManuallyPaused && !audio.ended && currentIndex !== -1) {
+          console.log("[Audio Event] Pausa del sistema/externa detectada en <audio>. Marcando interrupción para auto-reanudación.");
+          wasInterruptedWhilePlaying = true;
+        }
         isPlaying = false;
         actualizarBotonesPlay();
         const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "none";
+        const s = filteredSongs[currentIndex];
+        if (s) {
+          notifySwiftNowPlaying(s, false);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+        }
       });
 
       audio.addEventListener("ended", () => {
@@ -2361,7 +2452,13 @@
       let isDragging = false;
 
       function updateFromClientX(clientX, commit) {
-        if (!audio || !audio.duration || isNaN(audio.duration)) return;
+        const isNest = activeOutput === "nest";
+        const curSong = (currentIndex >= 0 && filteredSongs[currentIndex]) ? filteredSongs[currentIndex] : null;
+        const total = isNest
+          ? (castState.duration > 0 ? castState.duration : (curSong && curSong.duration ? Number(curSong.duration) : 0))
+          : (audio && audio.duration && !isNaN(audio.duration) ? audio.duration : 0);
+        if (!total || isNaN(total) || total <= 0) return;
+
         const rect = container.getBoundingClientRect();
         if (rect.width <= 0) return;
         let ratio = (clientX - rect.left) / rect.width;
@@ -2371,13 +2468,23 @@
         fill.style.width = `${pct}%`;
         thumb.style.left = `${pct}%`;
 
-        const curTime = ratio * audio.duration;
-        const total = audio.duration;
+        const curTime = ratio * total;
         document.getElementById("timeCurrent").textContent = formatTime(curTime);
         document.getElementById("timeRemaining").textContent = `-${formatTime(Math.max(0, total - curTime))}`;
 
         if (commit) {
-          audio.currentTime = curTime;
+          if (isNest) {
+            castState.currentTime = curTime;
+            castState.lastSyncAt = Date.now();
+            castState.seekLockUntil = Date.now() + 2600;
+            fetch(`${activeServerBase}/api/cast/control`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "seek", time: curTime })
+            }).catch(err => console.warn("[Cast Seek Error]", err));
+          } else {
+            audio.currentTime = curTime;
+          }
         }
       }
 
@@ -2712,50 +2819,299 @@
       showToast("Cola vaciada");
     }
 
-    // --- GOOGLE NEST MINI (CAST) ---
+    // --- GOOGLE NEST MINI (CAST CON SINCRONIZACIÓN REAL EN VIVO) ---
+    function getCastElapsed() {
+      let elapsed = castState.currentTime || 0;
+      if (castState.state === "PLAYING" && castState.lastSyncAt > 0) {
+        elapsed += (Date.now() - castState.lastSyncAt) / 1000;
+      }
+      if (castState.duration > 0) {
+        elapsed = Math.min(elapsed, castState.duration);
+      }
+      return Math.max(0, elapsed);
+    }
+
+    function actualizarUIVolumenNest(volFraction) {
+      const pct = Math.max(0, Math.min(100, Math.round((volFraction || 0) * 100)));
+      castState.volume = pct / 100;
+      const lbl = document.getElementById("nestVolLabel");
+      const slider = document.getElementById("nestVolSlider");
+      if (lbl) lbl.textContent = `${pct}%`;
+      if (slider && !isAdjustingNestVol) slider.value = pct;
+      if (activeOutput === "nest") {
+        const devName = document.getElementById("outputDeviceName");
+        if (devName) devName.textContent = `Google Nest Mini · ${pct}%`;
+      }
+    }
+
+    function updateCastProgressUI(force = false) {
+      if (activeOutput !== "nest") return;
+      if (isScrubbing && !force) return;
+
+      const s = (currentIndex >= 0 && filteredSongs[currentIndex]) ? filteredSongs[currentIndex] : null;
+      const total = castState.duration > 0 ? castState.duration : (s && s.duration ? Number(s.duration) : 0);
+      const current = getCastElapsed();
+      const pct = total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0;
+
+      const fill = document.getElementById("scrubberBarFill");
+      const thumb = document.getElementById("scrubberThumb");
+      if (fill) fill.style.width = `${pct}%`;
+      if (thumb) thumb.style.left = `${pct}%`;
+
+      const tc = document.getElementById("timeCurrent");
+      const tr = document.getElementById("timeRemaining");
+      if (tc) tc.textContent = formatTime(current);
+      if (tr) tr.textContent = total > 0 ? `-${formatTime(Math.max(0, total - current))}` : "-0:00";
+
+      // Si el reloj local llegó al final de la pista, forzar sincronización inmediata con Nest Mini
+      if (
+        castState.state === "PLAYING" &&
+        total > 5 &&
+        current >= total - 0.3 &&
+        Date.now() > castState.playLockUntil &&
+        !castSyncInFlight
+      ) {
+        syncCastStatus(true);
+      }
+    }
+
+    function startCastSync() {
+      stopCastSync();
+      castTickTimer = setInterval(() => {
+        updateCastProgressUI(false);
+      }, 250);
+      castPollTimer = setInterval(() => {
+        if (activeOutput === "nest") {
+          syncCastStatus(false);
+        }
+      }, 2000);
+    }
+
+    function stopCastSync() {
+      if (castTickTimer) {
+        clearInterval(castTickTimer);
+        castTickTimer = null;
+      }
+      if (castPollTimer) {
+        clearInterval(castPollTimer);
+        castPollTimer = null;
+      }
+    }
+
+    async function syncCastStatus(connectNow = false) {
+      if (castSyncInFlight) return;
+      castSyncInFlight = true;
+      const tokenAtStart = castState.playToken;
+
+      try {
+        const qs = connectNow ? "?connect=1" : "";
+        const res = await fetch(`${activeServerBase}/api/cast/status${qs}`);
+        if (!res.ok) return;
+        const d = await res.json();
+
+        castState.connected = !!d.connected;
+        if (typeof d.volume === "number" && !isAdjustingNestVol) {
+          actualizarUIVolumenNest(d.volume);
+        }
+
+        // Si solo consultábamos volumen/estado desde el sheet sin estar transmitiendo
+        if (activeOutput !== "nest") return;
+        // Ignorar respuesta obsoleta si el usuario cambió de canción mientras viajaba el fetch
+        if (tokenAtStart !== castState.playToken) return;
+
+        const now = Date.now();
+        const remoteState = (d.state || "IDLE").toUpperCase();
+        const remoteIdle = d.idle_reason ? String(d.idle_reason).toUpperCase() : "";
+        const remoteTime = typeof d.current_time === "number" ? d.current_time : 0;
+        const remoteDur = typeof d.duration === "number" ? d.duration : 0;
+
+        if (remoteDur > 0) {
+          castState.duration = remoteDur;
+        }
+
+        if (remoteState === "PLAYING" || remoteState === "PAUSED" || remoteTime > 1.5) {
+          castState.hasSeenActiveForToken = true;
+        }
+
+        if (now > castState.seekLockUntil && !isScrubbing && (remoteState === "PLAYING" || remoteState === "PAUSED")) {
+          castState.currentTime = remoteTime;
+          castState.lastSyncAt = now;
+        }
+
+        if (now > castState.playLockUntil) {
+          castState.state = remoteState;
+          const shouldBePlaying = (remoteState === "PLAYING" || remoteState === "BUFFERING");
+          if (isPlaying !== shouldBePlaying) {
+            isPlaying = shouldBePlaying;
+            actualizarBotonesPlay();
+            const s = filteredSongs[currentIndex];
+            if (s) notifySwiftNowPlaying(s, isPlaying);
+          }
+        }
+
+        updateCastProgressUI(false);
+
+        // DETECCIÓN CONFIABLE DE FIN DE CANCIÓN -> AVANCE AUTOMÁTICO EN NEST MINI
+        const nearEnd = castState.duration > 5 && getCastElapsed() >= (castState.duration - 4.0);
+        const finished =
+          remoteState === "IDLE" &&
+          castState.hasSeenActiveForToken &&
+          (remoteIdle === "FINISHED" || nearEnd);
+
+        if (
+          finished &&
+          now > castState.playLockUntil &&
+          castState.finishedHandledToken !== castState.playToken
+        ) {
+          castState.finishedHandledToken = castState.playToken;
+          if (repeatMode === 2 && currentIndex >= 0 && filteredSongs[currentIndex]) {
+            transmitirANestMini(filteredSongs[currentIndex].id, 0);
+          } else {
+            nextTrack();
+          }
+        }
+      } catch (err) {
+        console.warn("[Cast Sync Notice]", err);
+      } finally {
+        castSyncInFlight = false;
+      }
+    }
+
+    function aplicarEstiloSalidaNestUI() {
+      document.getElementById("cardNest").classList.add("active");
+      document.getElementById("cardIphone").classList.remove("active");
+      document.getElementById("checkNest").textContent = "● Transmitiendo";
+      document.getElementById("checkNest").style.color = "var(--brand-green)";
+      document.getElementById("checkIphone").textContent = "Seleccionar";
+      document.getElementById("checkIphone").style.color = "var(--text-muted)";
+      document.getElementById("outputDeviceName").textContent = `Google Nest Mini · ${Math.round(castState.volume * 100)}%`;
+      document.getElementById("nestVolBox").style.display = "flex";
+    }
+
     async function accionTransmitirNest() {
       cerrarMenuCancion();
       if (!menuSongTarget) return;
-      seleccionarSalida('nest');
-      transmitirANestMini(menuSongTarget.id);
+      const targetId = menuSongTarget.id;
+      activeOutput = "nest";
+      audio.pause();
+      aplicarEstiloSalidaNestUI();
+      seleccionarPorId(targetId);
     }
 
-    async function transmitirANestMini(songId) {
-      showToast("Conectando con Google Nest Mini (Comedor)...");
+    async function transmitirANestMini(songId, startTime = 0) {
+      const s = filteredSongs.find(item => item.id === songId) || (currentIndex >= 0 ? filteredSongs[currentIndex] : null);
+      const token = ++castState.playToken;
+
+      audio.pause();
+      castState.songId = songId;
+      castState.currentTime = startTime || 0;
+      castState.duration = s && s.duration ? Number(s.duration) : 0;
+      castState.state = "BUFFERING";
+      castState.lastSyncAt = Date.now();
+      castState.playLockUntil = Date.now() + 5500;
+      castState.seekLockUntil = Date.now() + 3000;
+      castState.hasSeenActiveForToken = false;
+      castState.finishedHandledToken = 0;
+
+      isPlaying = true;
+      actualizarBotonesPlay();
+      updateCastProgressUI(true);
+      if (s) {
+        actualizarMediaSession(s);
+        notifySwiftNowPlaying(s, true);
+      }
+      startCastSync();
+
+      showToast("Conectando con Google Nest Mini...");
       try {
         const res = await fetch(`${activeServerBase}/api/cast/play`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: songId })
+          body: JSON.stringify({
+            id: songId,
+            title: s ? s.title : "",
+            artist: s ? s.artist : "",
+            time: startTime || 0
+          })
         });
         const d = await res.json();
+        if (token !== castState.playToken) return;
+
         if (d.ok) {
           showToast("Transmitiendo a Google Nest Mini");
+          if (typeof d.volume === "number") actualizarUIVolumenNest(d.volume);
+          if (typeof d.duration === "number" && d.duration > 0) castState.duration = d.duration;
+          castState.currentTime = typeof d.current_time === "number" ? d.current_time : (startTime || 0);
+          castState.lastSyncAt = Date.now();
+          castState.state = "PLAYING";
+          castState.hasSeenActiveForToken = true;
           isPlaying = true;
           actualizarBotonesPlay();
+          updateCastProgressUI(true);
+          if (s) notifySwiftNowPlaying(s, true);
+          setTimeout(() => {
+            if (token === castState.playToken && activeOutput === "nest") syncCastStatus(true);
+          }, 1200);
+        } else {
+          showToast(d.error || "Error reproduciendo en Nest Mini");
         }
       } catch (err) {
-        showToast("Error de conexión con Nest Mini");
+        if (token === castState.playToken) {
+          showToast("Error de conexión con Nest Mini");
+        }
       }
     }
 
     let nestVolDebounce = null;
+    function enviarVolumenNest(val) {
+      const clamped = Math.max(0, Math.min(100, Number(val) || 0));
+      castState.volume = clamped / 100;
+      const lbl = document.getElementById("nestVolLabel");
+      if (lbl) lbl.textContent = `${clamped}%`;
+      if (activeOutput === "nest") {
+        const devName = document.getElementById("outputDeviceName");
+        if (devName) devName.textContent = `Google Nest Mini · ${clamped}%`;
+      }
+      fetch(`${activeServerBase}/api/cast/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "volume", volume: clamped / 100 })
+      }).catch(err => console.warn("[Cast Vol Error]", err));
+    }
+
     function ajustarVolumenNest(val) {
-      document.getElementById("nestVolLabel").textContent = `${val}%`;
+      isAdjustingNestVol = true;
+      const clamped = Math.max(0, Math.min(100, Number(val) || 0));
+      const lbl = document.getElementById("nestVolLabel");
+      if (lbl) lbl.textContent = `${clamped}%`;
       clearTimeout(nestVolDebounce);
       nestVolDebounce = setTimeout(() => {
-        fetch(`${activeServerBase}/api/cast/control`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "volume", volume: val / 100 })
-        });
-      }, 150);
+        enviarVolumenNest(clamped);
+      }, 100);
+    }
+
+    function finalizarVolumenNest(val) {
+      clearTimeout(nestVolDebounce);
+      enviarVolumenNest(val);
+      setTimeout(() => { isAdjustingNestVol = false; }, 350);
+    }
+
+    function stepVolumenNest(delta) {
+      triggerHaptic();
+      const slider = document.getElementById("nestVolSlider");
+      const cur = slider ? Number(slider.value) : Math.round(castState.volume * 100);
+      const next = Math.max(0, Math.min(100, cur + delta));
+      if (slider) slider.value = next;
+      isAdjustingNestVol = true;
+      finalizarVolumenNest(next);
     }
 
     function seleccionarSalida(tipo) {
       triggerHaptic();
+      const prevOutput = activeOutput;
       activeOutput = tipo;
       if (tipo === "iphone") {
+        stopCastSync();
         document.getElementById("cardIphone").classList.add("active");
         document.getElementById("cardNest").classList.remove("active");
         document.getElementById("checkIphone").textContent = "● Activo";
@@ -2769,41 +3125,157 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "stop" })
-        });
-        if (currentIndex !== -1) reproducirPistaActual();
+        }).catch(() => {});
+        if (currentIndex !== -1 && prevOutput !== "iphone") reproducirPistaActual();
+        setTimeout(() => cerrarCastSheet(), 300);
       } else {
-        document.getElementById("cardNest").classList.add("active");
-        document.getElementById("cardIphone").classList.remove("active");
-        document.getElementById("checkNest").textContent = "● Transmitiendo";
-        document.getElementById("checkNest").style.color = "var(--brand-green)";
-        document.getElementById("checkIphone").textContent = "Seleccionar";
-        document.getElementById("checkIphone").style.color = "var(--text-muted)";
-        document.getElementById("outputDeviceName").textContent = "Google Nest Mini (Comedor)";
-        document.getElementById("nestVolBox").style.display = "flex";
-
+        const resumeSec = (audio && !isNaN(audio.currentTime) && audio.currentTime > 1) ? audio.currentTime : 0;
+        aplicarEstiloSalidaNestUI();
         audio.pause();
-        if (currentIndex !== -1) reproducirPistaActual();
+        if (currentIndex !== -1 && prevOutput !== "nest") {
+          reproducirPistaActual(resumeSec);
+        } else {
+          startCastSync();
+          syncCastStatus(true);
+        }
       }
-      setTimeout(() => cerrarCastSheet(), 400);
     }
 
     function abrirCastSheet() {
       triggerHaptic();
       document.getElementById("castSheet").classList.add("active");
+      syncCastStatus(true);
     }
     function cerrarCastSheet() {
       document.getElementById("castSheet").classList.remove("active");
     }
 
+    // --- MANEJO ROBUSTO DE INTERRUPCIONES DE AUDIO (WHATSAPP, VIDEOS, LLAMADAS) ---
+    window.onNativeAudioInterruption = function(began, shouldResume = true) {
+      console.log(`[Native Interruption] began: ${began}, shouldResume: ${shouldResume}, isPlaying: ${isPlaying}`);
+      if (interruptionResumeTimer) {
+        clearTimeout(interruptionResumeTimer);
+        interruptionResumeTimer = null;
+      }
+
+      if (began) {
+        // Comenzó audio/video externo (WhatsApp, YouTube, llamada, etc.)
+        if (isPlaying || (!audio.paused && !audio.ended)) {
+          wasInterruptedWhilePlaying = true;
+        }
+        isPlaying = false;
+        actualizarBotonesPlay();
+        const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "none";
+        const s = filteredSongs[currentIndex];
+        if (s) {
+          notifySwiftNowPlaying(s, false);
+          if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+        }
+        try { audio.pause(); } catch(e) {}
+      } else {
+        // Finalizó el audio/video externo
+        if (wasInterruptedWhilePlaying && shouldResume !== false && !userManuallyPaused) {
+          console.log("[Native Interruption] Finalizó audio/video externo. Reanudando música automáticamente...");
+          wasInterruptedWhilePlaying = false;
+          interruptionResumeTimer = setTimeout(() => {
+            if (activeOutput === "nest") {
+              if (!isPlaying) togglePlay();
+            } else {
+              const playPromise = audio.play();
+              if (playPromise !== undefined) {
+                playPromise.then(() => {
+                  isPlaying = true;
+                  userManuallyPaused = false;
+                  actualizarBotonesPlay();
+                  const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "flex";
+                  const s = filteredSongs[currentIndex];
+                  if (s) {
+                    notifySwiftNowPlaying(s, true);
+                    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+                  }
+                }).catch(err => {
+                  console.warn("[Interruption Resume] Fallo al reanudar stream directo:", err);
+                  // Si el stream se desconectó por timeout en segundo plano, reconectar la pista
+                  if (currentIndex !== -1 && filteredSongs[currentIndex]) {
+                    reproducirPistaActual(audio.currentTime || 0);
+                  }
+                });
+              }
+            }
+          }, 200);
+        }
+      }
+    };
+
+    window.onNativeAppDidBecomeActive = function() {
+      if (wasInterruptedWhilePlaying && !userManuallyPaused && activeOutput === "iphone") {
+        window.onNativeAudioInterruption(false, true);
+      } else if (audio.paused && isPlaying) {
+        isPlaying = false;
+        actualizarBotonesPlay();
+      }
+    };
+
+    // Watchdog de sincronización de estado de audio (soluciona botón que no cambia a pausado)
+    setInterval(() => {
+      if (activeOutput === "iphone" && currentIndex !== -1) {
+        // Discrepancia 1: La UI piensa que está reproduciendo pero el reproductor fue pausado externamente
+        if (isPlaying && audio.paused && !audio.seeking && !isScrubbing) {
+          console.warn("[Audio Watchdog] El audio fue pausado por el sistema/externo. Sincronizando interfaz a pausado.");
+          if (!userManuallyPaused) wasInterruptedWhilePlaying = true;
+          isPlaying = false;
+          actualizarBotonesPlay();
+          const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "none";
+          const s = filteredSongs[currentIndex];
+          if (s) {
+            notifySwiftNowPlaying(s, false);
+            if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+          }
+        }
+        // Discrepancia 2: El reproductor está sonando pero la UI indicaba pausado
+        else if (!isPlaying && !audio.paused && !audio.seeking && !isScrubbing) {
+          isPlaying = true;
+          actualizarBotonesPlay();
+          const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "flex";
+        }
+      }
+    }, 500);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        if (activeOutput === "nest") {
+          syncCastStatus(true);
+        } else {
+          if (wasInterruptedWhilePlaying && !userManuallyPaused) {
+            window.onNativeAudioInterruption(false, true);
+          } else if (isPlaying && audio.paused) {
+            isPlaying = false;
+            actualizarBotonesPlay();
+          }
+        }
+      }
+    });
+
+    window.addEventListener("focus", () => {
+      if (wasInterruptedWhilePlaying && !userManuallyPaused && activeOutput === "iphone") {
+        window.onNativeAudioInterruption(false, true);
+      }
+    });
+
     // --- INTEGRACIÓN SWIFT NATIVA Y MEDIASESSION ---
     function notifySwiftNowPlaying(s, playingState) {
       if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.orfeoNative) {
+        const isNest = activeOutput === "nest";
+        const dur = isNest
+          ? (castState.duration || (s ? Number(s.duration || 0) : 0))
+          : (audio ? (audio.duration || (s ? s.duration : 0) || 0) : 0);
+        const elap = isNest ? getCastElapsed() : (audio ? audio.currentTime : 0);
         window.webkit.messageHandlers.orfeoNative.postMessage({
           action: "updateNowPlaying",
           title: s ? s.title : "",
           artist: s ? s.artist : "",
-          duration: audio ? (audio.duration || s.duration || 0) : 0,
-          elapsed: audio ? audio.currentTime : 0,
+          duration: dur,
+          elapsed: elap,
           isPlaying: !!playingState
         });
       }
@@ -2824,8 +3296,15 @@
           album: s.album || "Odiseo Music",
           artwork: [{ src: coverSrc, sizes: "512x512", type: "image/jpeg" }]
         });
-        navigator.mediaSession.setActionHandler("play", () => togglePlay());
-        navigator.mediaSession.setActionHandler("pause", () => togglePlay());
+        navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+        navigator.mediaSession.setActionHandler("play", () => {
+          wasInterruptedWhilePlaying = false;
+          togglePlay(true);
+        });
+        navigator.mediaSession.setActionHandler("pause", () => {
+          wasInterruptedWhilePlaying = false;
+          togglePlay(false);
+        });
         navigator.mediaSession.setActionHandler("previoustrack", () => prevTrack());
         navigator.mediaSession.setActionHandler("nexttrack", () => nextTrack());
       }

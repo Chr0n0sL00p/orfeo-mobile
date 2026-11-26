@@ -9,15 +9,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var mainVC: MainViewController?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // 1. Audio Session for Continuous Background Playback
+        // 1. Audio Session for Continuous Background Playback & Interruption Handling
         // NOTE: AVAudioSessionCategoryPlayback natively routes to Bluetooth and AirPlay.
         // DO NOT pass allowBluetooth or allowBluetoothA2DP here as it raises an uncatchable Objective-C NSInvalidArgumentException!
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("[Orfeo] AudioSession setup error: \(error)")
-        }
+        setupAudioSession()
 
         // 2. Lockscreen & Control Center Remote Controls
         setupRemoteCommands()
@@ -33,6 +28,86 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         OrfeoOTAUpdater.shared.checkForUpdates(mainVC: vc)
 
         return true
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {}
+        notifyWeb("onNativeAppDidBecomeActive()")
+    }
+
+    private func setupAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("[Orfeo] AudioSession setup error: \(error)")
+        }
+
+        // Observar interrupciones de audio (audios de WhatsApp, videos de YouTube/Instagram, llamadas)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+
+        // Observar desconexión de auriculares / AirPods
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+    }
+
+    @objc private func handleAudioInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let interruptionType = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        switch interruptionType {
+        case .began:
+            print("[Orfeo] Interrupción de audio iniciada (audio o video externo en reproducción)")
+            notifyWeb("onNativeAudioInterruption(true)")
+
+        case .ended:
+            print("[Orfeo] Interrupción de audio finalizada")
+            var shouldResume = true
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                shouldResume = options.contains(.shouldResume)
+            }
+
+            // Reactivar inmediatamente la sesión de audio del sistema
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                print("[Orfeo] Error reactivando AVAudioSession tras interrupción: \(error)")
+            }
+
+            // Notificar al reproductor web para que reanude automáticamente
+            notifyWeb("onNativeAudioInterruption(false, \(shouldResume))")
+
+        @unknown default:
+            break
+        }
+    }
+
+    @objc private func handleAudioRouteChange(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+
+        if reason == .oldDeviceUnavailable {
+            print("[Orfeo] Dispositivo de salida desconectado (auriculares/AirPods). Pausando.")
+            notifyWeb("onNativeAudioInterruption(true)")
+        }
     }
 
     private func setupRemoteCommands() {
