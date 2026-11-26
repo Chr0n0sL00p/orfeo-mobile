@@ -1384,6 +1384,7 @@
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
     let isScrubbing = false;
+    let playbackRequestId = 0;
 
     const audio = document.getElementById("audioPlayer");
     let preloadAudio = new Audio();
@@ -1658,39 +1659,57 @@
       renderizarCanciones();
     }
 
-    function reproducirPistaActual() {
+        function reproducirPistaActual() {
       if (currentIndex < 0 || currentIndex >= filteredSongs.length) return;
       const s = filteredSongs[currentIndex];
       if (!s) return;
 
       triggerHaptic();
 
+      // 1. ACTUALIZACIÓN INMEDIATA DE UI (0 ms de espera): Mini Player y Now Playing se actualizan al instante
+      actualizarUI(s);
+      isPlaying = true;
+      actualizarBotonesPlay();
+
       if (activeOutput === "nest") {
         transmitirANestMini(s.id);
-        actualizarUI(s);
         return;
       }
 
-      // Reproducción Local
+      // 2. Control de colisión de promesas al pulsar rápido consecutivamente
+      const currentRequestId = ++playbackRequestId;
       const streamUrl = `${activeServerBase}/api/stream/${s.id}`;
-      audio.src = streamUrl;
-      
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          isPlaying = true;
-          actualizarUI(s);
-          actualizarMediaSession(s);
-          notifySwiftNowPlaying(s, true);
-        }).catch(err => {
-          console.warn("Fallo play local, intentando switch de red:", err);
-          // Si falló por cambio de red (ej. de Wi-Fi a 5G), conmutar a Tailscale y reintentar
-          if (activeServerBase !== TAILSCALE_BASE) {
-            activeServerBase = TAILSCALE_BASE;
-            audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
-            audio.play().catch(console.error);
-          }
-        });
+
+      try {
+        audio.pause();
+        audio.src = streamUrl;
+        audio.load();
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            // Si el usuario ya pulsó otra canción mientras cargaba esta, ignorar
+            if (currentRequestId !== playbackRequestId) return;
+            isPlaying = true;
+            actualizarBotonesPlay();
+            actualizarMediaSession(s);
+            notifySwiftNowPlaying(s, true);
+          }).catch(err => {
+            // AbortError ocurre normalmente al saltar de canción rápido: descartar silenciosamente sin bloquear
+            if (err.name === "AbortError" || currentRequestId !== playbackRequestId) {
+              return;
+            }
+            console.warn("[Playback Notice] Reintentando vía Tailscale:", err);
+            if (activeServerBase !== TAILSCALE_BASE) {
+              activeServerBase = TAILSCALE_BASE;
+              audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
+              audio.load();
+              audio.play().catch(() => {});
+            }
+          });
+        }
+      } catch (e) {
+        console.warn("[Audio Exception]", e);
       }
     }
 
