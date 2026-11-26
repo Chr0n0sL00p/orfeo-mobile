@@ -2176,12 +2176,8 @@
 
     function prevTrack() {
       triggerHaptic();
-      if (audio.currentTime > 3) {
-        audio.currentTime = 0;
-        return;
-      }
 
-      // En modo aleatorio (o normal), retroceder primero a la canción recién escuchada del historial
+      // En modo aleatorio (o con historial activo), retroceder primero a la canción recién escuchada del historial
       if (playbackHistory.length > 0) {
         const prevId = playbackHistory.pop();
         const targetIdx = filteredSongs.findIndex(s => s.id === prevId);
@@ -2193,6 +2189,13 @@
           isNavigatingHistory = false;
           return;
         }
+      }
+
+      // Si está en modo aleatorio y no hay más historial previo, reiniciar la pista actual
+      if (isShuffle) {
+        audio.currentTime = 0;
+        showToast("Inicio de la lista aleatoria");
+        return;
       }
 
       if (filteredSongs.length === 0) return;
