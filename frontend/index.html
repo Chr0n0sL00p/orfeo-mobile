@@ -573,6 +573,8 @@
       padding: calc(var(--safe-top) + 16px) 24px calc(var(--safe-bottom) + 20px) 24px;
       transform: translateY(100%);
       transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      touch-action: none;
+      overscroll-behavior: contain;
     }
     .now-playing-modal.active {
       transform: translateY(0);
@@ -1768,7 +1770,7 @@
 
     
     // --- GESTO DE DESLIZAR HACIA ABAJO PARA CERRAR EL REPRODUCTOR ---
-        function setupNowPlayingDismissGesture() {
+            function setupNowPlayingDismissGesture() {
       const modal = document.getElementById("nowPlayingModal");
       let startY = 0;
       let startX = 0;
@@ -1799,10 +1801,14 @@
           }
         }
 
-        if (isDraggingDown && diffY > 0) {
-          modal.style.transform = `translateY(${diffY}px)`;
+        if (isDraggingDown) {
+          // Bloquear el scroll de la página de fondo al arrastrar hacia abajo
+          if (e.cancelable) e.preventDefault();
+          if (diffY > 0) {
+            modal.style.transform = `translateY(${diffY}px)`;
+          }
         }
-      }, { passive: true });
+      }, { passive: false });
 
       modal.addEventListener("touchend", () => {
         if (!isDraggingDown) return;
@@ -1811,11 +1817,12 @@
         const diffY = currentY - startY;
 
         if (diffY > 80) {
-          // Deslizado fluido: animar directamente hasta 100% sin pausas a media animación
+          // Deslizado fluido: animar directamente hasta 100% y restaurar overflow al terminar
           modal.style.transition = "transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1)";
           modal.style.transform = "translateY(100%)";
           setTimeout(() => {
             modal.classList.remove("active");
+            document.body.style.overflow = "";
             modal.style.transition = "";
             modal.style.transform = "";
           }, 280);
@@ -2281,8 +2288,13 @@
     function toggleNowPlayingModal(show) {
       triggerHaptic();
       const modal = document.getElementById("nowPlayingModal");
-      if (show) modal.classList.add("active");
-      else modal.classList.remove("active");
+      if (show) {
+        modal.classList.add("active");
+        document.body.style.overflow = "hidden";
+      } else {
+        modal.classList.remove("active");
+        document.body.style.overflow = "";
+      }
     }
 
     function toggleShuffle() {
