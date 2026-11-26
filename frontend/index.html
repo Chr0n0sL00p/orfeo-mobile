@@ -388,6 +388,17 @@
       align-items: center;
       gap: 6px;
     }
+        .download-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      flex-shrink: 0;
+    }
     .flac-badge {
       font-size: 9px;
       font-weight: 700;
@@ -955,9 +966,6 @@
     <div class="splash-status-text" id="splashStatus">Conectando con Odiseo por Tailscale...</div>
   </div>
 
-  
-  </div>
-
   <!-- Main View -->
   <main class="app-main">
     <header class="header-bar">
@@ -1008,6 +1016,7 @@
       <span id="songCountText">Cargando biblioteca...</span>
       <div class="pill-tabs">
         <button class="pill-tab active" onclick="filtrarCategoria('all', this)">Todas</button>
+        <button class="pill-tab" onclick="filtrarCategoria('downloaded', this)">Descargadas</button>
         <button class="pill-tab" onclick="filtrarCategoria('flac', this)">FLAC Hi-Res</button>
         <button class="pill-tab" onclick="filtrarCategoria('nest', this)">Nest Mini</button>
       </div>
@@ -1198,6 +1207,15 @@
         </svg>
         <span>Transmitir a Google Nest Mini (Comedor)</span>
       </div>
+      <!-- BOTÓN EXPLICITO DE DESCARGA OFFLINE -->
+      <div class="sheet-item" id="sheetBtnDownload" onclick="accionToggleDescarga()">
+        <svg id="sheetIconDownload" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span id="sheetTextDownload">Descargar al iPhone para escuchar sin conexión</span>
+      </div>
       <div class="sheet-item danger" onclick="abrirConfirmacionEliminar()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="3 6 5 6 21 6"></polyline>
@@ -1322,6 +1340,213 @@
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
     let isScrubbing = false;
+
+    // --- MOTOR DE DESCARGA Y REPRODUCCIÓN OFFLINE EXCLUSIVA (INDEXEDDB) ---
+    const DB_NAME = "OrfeoOfflineDB";
+    const STORE_NAME = "offline_tracks";
+    let dbInstance = null;
+    let downloadedSongIds = new Set();
+    let currentObjectUrl = null;
+
+    function initOfflineDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: "id" });
+          }
+        };
+        req.onsuccess = (e) => {
+          dbInstance = e.target.result;
+          cargarListaDescargas().then(resolve);
+        };
+        req.onerror = () => {
+          console.warn("No se pudo inicializar IndexedDB offline");
+          resolve();
+        };
+      });
+    }
+
+    async function cargarListaDescargas() {
+      if (!dbInstance) return;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbInstance.transaction(STORE_NAME, "readonly");
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.getAllKeys();
+          req.onsuccess = () => {
+            downloadedSongIds = new Set(req.result || []);
+            console.log(`[Offline] ${downloadedSongIds.size} canciones descargadas en el iPhone.`);
+            resolve();
+          };
+          req.onerror = () => resolve();
+        } catch(e) {
+          resolve();
+        }
+      });
+    }
+
+    async function descargarCancionOffline(song) {
+      if (!dbInstance) return;
+      triggerHaptic();
+      showToast(`⬇️ Descargando "${song.title.substring(0, 20)}..."`);
+
+      try {
+        const streamUrl = `${activeServerBase}/api/stream/${song.id}`;
+        const res = await fetch(streamUrl);
+        if (!res.ok) throw new Error("Fallo al descargar stream");
+        const audioBlob = await res.blob();
+
+        let coverBlob = null;
+        if (song.has_cover) {
+          try {
+            const coverRes = await fetch(`${activeServerBase}/api/cover/${song.id}`);
+            if (coverRes.ok) coverBlob = await coverRes.blob();
+          } catch(e) {}
+        }
+
+        const record = {
+          id: song.id,
+          song: song,
+          audioBlob: audioBlob,
+          coverBlob: coverBlob,
+          size: audioBlob.size,
+          downloadedAt: Date.now()
+        };
+
+        const tx = dbInstance.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        store.put(record);
+
+        tx.oncomplete = () => {
+          triggerHaptic();
+          downloadedSongIds.add(song.id);
+          renderizarCanciones();
+          actualizarBotonDescargaSheet(song.id);
+          const mb = (audioBlob.size / (1024 * 1024)).toFixed(1);
+          showToast(`✓ Descargada (${mb} MB): lista para escuchar sin internet`);
+        };
+      } catch (err) {
+        console.error("Error al descargar canción:", err);
+        showToast("Error al descargar: verifica tu conexión con Odiseo");
+      }
+    }
+
+    async function obtenerOfflineRecord(songId) {
+      if (!dbInstance || !downloadedSongIds.has(songId)) return null;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbInstance.transaction(STORE_NAME, "readonly");
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.get(songId);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        } catch(e) {
+          resolve(null);
+        }
+      });
+    }
+
+    async function cargarCancionesOfflineSiNoHayRed() {
+      if (!dbInstance) return;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbInstance.transaction(STORE_NAME, "readonly");
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.getAll();
+          req.onsuccess = () => {
+            const records = req.result || [];
+            if (records.length > 0 && allSongs.length === 0) {
+              allSongs = records.map(r => r.song);
+              filteredSongs = [...allSongs];
+              renderizarCanciones();
+            }
+            if (downloadedSongIds.size > 0) {
+              document.getElementById("songCountText").textContent = `${downloadedSongIds.size} pistas en iPhone (Offline)`;
+            }
+            document.getElementById("statusLabel").textContent = "Offline";
+            document.getElementById("statusPill").style.color = "#22c55e";
+            showToast("⚡ Modo Offline: reproduciendo descargas del iPhone");
+            resolve();
+          };
+          req.onerror = () => resolve();
+        } catch(e) {
+          resolve();
+        }
+      });
+    }
+
+    async function eliminarDescargaOffline(songId) {
+      if (!dbInstance) return;
+      triggerHaptic();
+      try {
+        const tx = dbInstance.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(songId);
+
+        tx.oncomplete = () => {
+          downloadedSongIds.delete(songId);
+          renderizarCanciones();
+          actualizarBotonDescargaSheet(songId);
+          showToast("Descarga eliminada del iPhone");
+        };
+      } catch (err) {
+        showToast("Error al eliminar descarga local");
+      }
+    }
+
+    function accionToggleDescarga() {
+      cerrarMenuCancion();
+      if (!menuSongTarget) return;
+      if (downloadedSongIds.has(menuSongTarget.id)) {
+        eliminarDescargaOffline(menuSongTarget.id);
+      } else {
+        descargarCancionOffline(menuSongTarget);
+      }
+    }
+
+    function actualizarBotonDescargaSheet(songId) {
+      const isDown = downloadedSongIds.has(songId);
+      const textEl = document.getElementById("sheetTextDownload");
+      const iconEl = document.getElementById("sheetIconDownload");
+
+      if (textEl && iconEl) {
+        if (isDown) {
+          textEl.textContent = "Eliminar descarga del iPhone";
+          textEl.style.color = "#f87171";
+          iconEl.innerHTML = '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>';
+          iconEl.setAttribute("stroke", "#f87171");
+        } else {
+          textEl.textContent = "Descargar al iPhone para escuchar sin conexión";
+          textEl.style.color = "#fff";
+          iconEl.innerHTML = '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>';
+          iconEl.setAttribute("stroke", "currentColor");
+        }
+      }
+    }
+
+    async function obtenerAudioOfflineBlob(songId) {
+      if (!dbInstance || !downloadedSongIds.has(songId)) return null;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbInstance.transaction(STORE_NAME, "readonly");
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.get(songId);
+          req.onsuccess = () => {
+            if (req.result && req.result.audioBlob) {
+              resolve(req.result.audioBlob);
+            } else {
+              resolve(null);
+            }
+          };
+          req.onerror = () => resolve(null);
+        } catch(e) {
+          resolve(null);
+        }
+      });
+    }
+
     let playbackRequestId = 0;
 
     const audio = document.getElementById("audioPlayer");
@@ -1345,7 +1570,7 @@
 
     // --- INICIALIZACIÓN CON PANTALLA DE CARGA ---
     window.addEventListener("DOMContentLoaded", () => {
-      iniciarCargaConSplash();
+      initOfflineDB().then(() => iniciarCargaConSplash());
       setupAudioEvents();
       setupNowPlayingDismissGesture();
     });
@@ -1427,7 +1652,7 @@
           activeServerBase = TAILSCALE_BASE;
           cargarBiblioteca();
         } else {
-          showToast("Error de conexión con Odiseo");
+          await cargarCancionesOfflineSiNoHayRed();
         }
       }
     }
@@ -1447,6 +1672,7 @@
         const isActive = (currentIndex !== -1 && filteredSongs[currentIndex] && filteredSongs[currentIndex].id === s.id);
         const coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : "icon.png";
         const durationFormatted = formatTime(s.duration || 0);
+        const isDownloaded = downloadedSongIds.has(s.id);
 
         // CLAVE: Se pasa '${s.id}' exactamente, eliminando cualquier bug de índice al hacer scroll!
         html += `
@@ -1462,6 +1688,7 @@
               <div class="song-details">
                 <div class="song-title">${escapeHtml(s.title)}</div>
                 <div class="song-meta">
+                  ${isDownloaded ? '<span class="download-badge" title="Guardada en iPhone"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ''}
                   <span class="flac-badge">FLAC</span>
                   <span>${escapeHtml(s.artist)}</span>
                 </div>
@@ -1594,7 +1821,13 @@
       if (idx === -1) return;
       currentIndex = idx;
       reproducirPistaActual();
-      renderizarCanciones();
+      actualizarItemActivoUI(songId);
+    }
+
+    function actualizarItemActivoUI(songId) {
+      document.querySelectorAll('.song-item.active').forEach(el => el.classList.remove('active'));
+      const cur = document.getElementById('song-' + songId);
+      if (cur) cur.classList.add('active');
     }
 
         function reproducirPistaActual() {
@@ -1614,41 +1847,51 @@
         return;
       }
 
-      // 2. Control de colisión de promesas al pulsar rápido consecutivamente
+            // 2. Control de colisión de promesas al pulsar rápido consecutivamente
       const currentRequestId = ++playbackRequestId;
-      const streamUrl = `${activeServerBase}/api/stream/${s.id}`;
 
-      try {
-        audio.pause();
-        audio.src = streamUrl;
-        audio.load();
+      // COMPROBACIÓN OFFLINE: Si la canción fue descargada por acción del usuario, reproducir 100% local!
+      obtenerAudioOfflineBlob(s.id).then(blob => {
+        if (currentRequestId !== playbackRequestId) return;
 
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            // Si el usuario ya pulsó otra canción mientras cargaba esta, ignorar
-            if (currentRequestId !== playbackRequestId) return;
-            isPlaying = true;
-            actualizarBotonesPlay();
-            actualizarMediaSession(s);
-            notifySwiftNowPlaying(s, true);
-          }).catch(err => {
-            // AbortError ocurre normalmente al saltar de canción rápido: descartar silenciosamente sin bloquear
-            if (err.name === "AbortError" || currentRequestId !== playbackRequestId) {
-              return;
-            }
-            console.warn("[Playback Notice] Reintentando vía Tailscale:", err);
-            if (activeServerBase !== TAILSCALE_BASE) {
-              activeServerBase = TAILSCALE_BASE;
-              audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
-              audio.load();
-              audio.play().catch(() => {});
-            }
-          });
+        let streamUrl = `${activeServerBase}/api/stream/${s.id}`;
+        if (blob) {
+          if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+          currentObjectUrl = URL.createObjectURL(blob);
+          streamUrl = currentObjectUrl;
+          showToast("⚡ Reproduciendo desde el iPhone (Modo Offline)");
         }
-      } catch (e) {
-        console.warn("[Audio Exception]", e);
-      }
+
+        try {
+          audio.pause();
+          audio.src = streamUrl;
+          audio.load();
+
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              if (currentRequestId !== playbackRequestId) return;
+              isPlaying = true;
+              actualizarBotonesPlay();
+              actualizarMediaSession(s);
+              notifySwiftNowPlaying(s, true);
+            }).catch(err => {
+              if (err.name === "AbortError" || currentRequestId !== playbackRequestId) {
+                return;
+              }
+              console.warn("[Playback Notice] Fallo:", err);
+              if (!blob && activeServerBase !== TAILSCALE_BASE) {
+                activeServerBase = TAILSCALE_BASE;
+                audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
+                audio.load();
+                audio.play().catch(() => {});
+              }
+            });
+          }
+        } catch (e) {
+          console.warn("[Audio Exception]", e);
+        }
+      });
     }
 
     function togglePlay() {
@@ -1706,7 +1949,7 @@
         currentIndex = (currentIndex + 1) % filteredSongs.length;
       }
       reproducirPistaActual();
-      renderizarCanciones();
+      if (filteredSongs[currentIndex]) actualizarItemActivoUI(filteredSongs[currentIndex].id);
     }
 
     function prevTrack() {
@@ -1721,7 +1964,7 @@
         currentIndex = filteredSongs.length - 1;
       }
       reproducirPistaActual();
-      renderizarCanciones();
+      if (filteredSongs[currentIndex]) actualizarItemActivoUI(filteredSongs[currentIndex].id);
     }
 
     function seekAudioExact(sec) {
@@ -1878,7 +2121,7 @@
 
     // --- ACTUALIZACIÓN DE UI ---
     function actualizarUI(s) {
-      const coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : "icon.png";
+      let coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : "icon.png";
       
       // Mini Player
       document.getElementById("miniPlayer").style.display = "flex";
@@ -1891,8 +2134,16 @@
       document.getElementById("npTitle").textContent = s.title;
       document.getElementById("npArtist").textContent = s.artist;
 
-      // Dynamic Island
-      const itxt = document.getElementById("islandText"); if (itxt) itxt.textContent = `${s.title.substring(0, 16)}...`;
+      // Si la pista tiene portada descargada en el iPhone, mostrar el blob local (0 ms, offline)
+      if (downloadedSongIds.has(s.id)) {
+        obtenerOfflineRecord(s.id).then(rec => {
+          if (rec && rec.coverBlob) {
+            const bUrl = URL.createObjectURL(rec.coverBlob);
+            document.getElementById("miniCover").src = bUrl;
+            document.getElementById("npCover").src = bUrl;
+          }
+        });
+      }
 
       actualizarBotonesPlay();
     }
@@ -1927,6 +2178,7 @@
       if (coverEl) coverEl.src = coverSrc;
       if (titleEl) titleEl.textContent = song.title;
       if (artistEl) artistEl.textContent = song.artist;
+      actualizarBotonDescargaSheet(song.id);
       if (overlayEl) overlayEl.classList.add("active");
     }
 
@@ -2312,6 +2564,8 @@
 
       if (cat === "all") {
         filteredSongs = [...allSongs];
+      } else if (cat === "downloaded") {
+        filteredSongs = allSongs.filter(s => downloadedSongIds.has(s.id));
       } else if (cat === "flac") {
         filteredSongs = allSongs.filter(s => s.duration > 30);
       } else if (cat === "nest") {
