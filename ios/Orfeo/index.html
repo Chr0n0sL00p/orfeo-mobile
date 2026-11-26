@@ -948,7 +948,133 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* Bulk Download & Offline 320k UI */
+    .btn-download-all {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      touch-action: manipulation;
+    }
+    .btn-download-all:active {
+      transform: scale(0.96);
+      background: rgba(56, 189, 248, 0.25);
+    }
+    .bulk-modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 4000;
+      padding: 24px;
+    }
+    .bulk-modal-overlay.active {
+      display: flex;
+    }
+    .bulk-modal-content {
+      background: #111726;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      width: 100%;
+      max-width: 360px;
+      padding: 24px;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .bulk-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .bulk-modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .bulk-modal-close {
+      background: rgba(255,255,255,0.08);
+      border: none;
+      color: #fff;
+      font-size: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .bulk-modal-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .bulk-progress-wrap {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .bulk-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #0284c7, #38bdf8);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    .bulk-stats-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .bulk-size-text {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .bulk-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .bulk-btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+    }
+    .bulk-btn-primary {
+      background: var(--accent);
+      color: #040914;
+    }
+    .bulk-btn-cancel {
+      background: rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+    }
   </style>
+
 </head>
 <body>
 
@@ -1013,7 +1139,17 @@
 
     <!-- Info Bar -->
     <div class="info-bar">
-      <span id="songCountText">Cargando biblioteca...</span>
+      <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 8px;">
+        <span id="songCountText">Cargando biblioteca...</span>
+        <button class="btn-download-all" id="btnDownloadAll" onclick="iniciarOVerDescargaMasiva()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span id="labelDownloadAll">Descargar Todo (320k)</span>
+        </button>
+      </div>
       <div class="pill-tabs">
         <button class="pill-tab active" onclick="filtrarCategoria('all', this)">Todas</button>
         <button class="pill-tab" onclick="filtrarCategoria('downloaded', this)">Descargadas</button>
@@ -1393,7 +1529,7 @@
       showToast(`⬇️ Descargando "${song.title.substring(0, 20)}..."`);
 
       try {
-        const streamUrl = `${activeServerBase}/api/stream/${song.id}`;
+        const streamUrl = `${activeServerBase}/api/stream/${song.id}?format=320k`;
         const res = await fetch(streamUrl);
         if (!res.ok) throw new Error("Fallo al descargar stream");
         const audioBlob = await res.blob();
@@ -1830,7 +1966,7 @@
       if (cur) cur.classList.add('active');
     }
 
-        function reproducirPistaActual() {
+    function reproducirPistaActual() {
       if (currentIndex < 0 || currentIndex >= filteredSongs.length) return;
       const s = filteredSongs[currentIndex];
       if (!s) return;
@@ -1847,51 +1983,69 @@
         return;
       }
 
-            // 2. Control de colisión de promesas al pulsar rápido consecutivamente
       const currentRequestId = ++playbackRequestId;
 
-      // COMPROBACIÓN OFFLINE: Si la canción fue descargada por acción del usuario, reproducir 100% local!
+      // PRIORIDAD ABSOLUTA EN MODO LAN (Wi-Fi de Casa):
+      // Si estamos en la red local de casa (LAN 0 ms), reproducir SIEMPRE el stream original FLAC Lossless Bit-Perfect
+      // directo desde Odiseo, incluso si la canción está descargada a 320 kbps.
+      if (activeServerBase === LOCAL_LAN_BASE) {
+        showToast("🎧 Reproduciendo FLAC Bit-Perfect Original (Modo Casa / LAN)");
+        iniciarAudioElement(`${LOCAL_LAN_BASE}/api/stream/${s.id}`, currentRequestId, false);
+        return;
+      }
+
+      // FUERA DE CASA (4G/5G, Tailscale o sin red):
+      // Si la pista está descargada, reproducir el blob local a 320 kbps (0 ms, 0 datos)
       obtenerAudioOfflineBlob(s.id).then(blob => {
         if (currentRequestId !== playbackRequestId) return;
 
-        let streamUrl = `${activeServerBase}/api/stream/${s.id}`;
         if (blob) {
           if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
           currentObjectUrl = URL.createObjectURL(blob);
-          streamUrl = currentObjectUrl;
-          showToast("⚡ Reproduciendo desde el iPhone (Modo Offline)");
+          showToast("⚡ Reproduciendo desde el iPhone (Offline AAC 320k)");
+          iniciarAudioElement(currentObjectUrl, currentRequestId, true);
+        } else {
+          iniciarAudioElement(`${activeServerBase}/api/stream/${s.id}`, currentRequestId, false);
         }
+      });
+    }
 
-        try {
-          audio.pause();
-          audio.src = streamUrl;
-          audio.load();
+    function iniciarAudioElement(streamUrl, currentRequestId, isLocalOffline) {
+      try {
+        audio.pause();
+        audio.src = streamUrl;
+        audio.load();
 
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-            playPromise.then(() => {
-              if (currentRequestId !== playbackRequestId) return;
-              isPlaying = true;
-              actualizarBotonesPlay();
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            if (currentRequestId !== playbackRequestId) return;
+            isPlaying = true;
+            actualizarBotonesPlay();
+            const s = filteredSongs[currentIndex];
+            if (s) {
               actualizarMediaSession(s);
               notifySwiftNowPlaying(s, true);
-            }).catch(err => {
-              if (err.name === "AbortError" || currentRequestId !== playbackRequestId) {
-                return;
-              }
-              console.warn("[Playback Notice] Fallo:", err);
-              if (!blob && activeServerBase !== TAILSCALE_BASE) {
-                activeServerBase = TAILSCALE_BASE;
-                audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
+            }
+          }).catch(err => {
+            if (err.name === "AbortError" || currentRequestId !== playbackRequestId) {
+              return;
+            }
+            console.warn("[Playback Notice] Fallo:", err);
+            if (!isLocalOffline && activeServerBase !== TAILSCALE_BASE) {
+              activeServerBase = TAILSCALE_BASE;
+              const s = filteredSongs[currentIndex];
+              if (s) {
+                audio.src = ;
                 audio.load();
                 audio.play().catch(() => {});
               }
-            });
-          }
-        } catch (e) {
-          console.warn("[Audio Exception]", e);
+            }
+          });
         }
-      });
+      } catch (e) {
+        console.warn("[Audio Exception]", e);
+      }
     }
 
     function togglePlay() {
@@ -2597,6 +2751,208 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
     }
-  </script>
+  
+    // --- GESTOR DE DESCARGA MASIVA DE TODA LA BIBLIOTECA (AAC 320 KBPS · MÁX. 15 GB) ---
+    let isBulkDownloading = false;
+    let isBulkPaused = false;
+    let bulkQueue = [];
+    let bulkCurrentIndex = 0;
+    let bulkDownloadedBytes = 0;
+
+    function iniciarOVerDescargaMasiva() {
+      triggerHaptic();
+      const modal = document.getElementById("bulkModalOverlay");
+      actualizarBulkStatsUI();
+      modal.classList.add("active");
+    }
+
+    function cerrarBulkModal(e) {
+      if (e && e.target && e.target.classList && !e.target.classList.contains("bulk-modal-overlay")) return;
+      document.getElementById("bulkModalOverlay").classList.remove("active");
+    }
+
+    function toggleBulkDownload() {
+      triggerHaptic();
+      const btn = document.getElementById("bulkToggleBtn");
+      if (!isBulkDownloading) {
+        // Iniciar
+        isBulkDownloading = true;
+        isBulkPaused = false;
+        btn.textContent = "Pausar";
+        btn.style.background = "#eab308";
+        btn.style.color = "#000";
+        prepararYEjecutarColaBulk();
+      } else if (!isBulkPaused) {
+        // Pausar
+        isBulkPaused = true;
+        btn.textContent = "Reanudar";
+        btn.style.background = "var(--accent)";
+        btn.style.color = "#040914";
+        document.getElementById("bulkStatusText").textContent = "Descarga pausada";
+      } else {
+        // Reanudar
+        isBulkPaused = false;
+        btn.textContent = "Pausar";
+        btn.style.background = "#eab308";
+        btn.style.color = "#000";
+        ejecutarSiguientePistaBulk();
+      }
+    }
+
+    function cancelarBulkDownload() {
+      triggerHaptic();
+      isBulkDownloading = false;
+      isBulkPaused = false;
+      const btn = document.getElementById("bulkToggleBtn");
+      btn.textContent = "Iniciar Descarga";
+      btn.style.background = "var(--accent)";
+      btn.style.color = "#040914";
+      document.getElementById("bulkStatusText").textContent = "Cancelado";
+      cerrarBulkModal();
+    }
+
+    async function prepararYEjecutarColaBulk() {
+      bulkQueue = allSongs.filter(s => !downloadedSongIds.has(s.id));
+      bulkCurrentIndex = 0;
+      actualizarBulkStatsUI();
+
+      if (bulkQueue.length === 0) {
+        showToast("✓ Toda la biblioteca ya está descargada en tu iPhone!");
+        cancelarBulkDownload();
+        return;
+      }
+
+      showToast(`Iniciando descarga de ${bulkQueue.length} pistas a 320 kbps`);
+      ejecutarSiguientePistaBulk();
+    }
+
+    async function ejecutarSiguientePistaBulk() {
+      if (!isBulkDownloading || isBulkPaused) return;
+
+      if (bulkCurrentIndex >= bulkQueue.length) {
+        isBulkDownloading = false;
+        isBulkPaused = false;
+        triggerHaptic();
+        showToast("🎉 ¡Biblioteca completa descargada con éxito!");
+        actualizarBulkStatsUI();
+        document.getElementById("bulkStatusText").textContent = "¡Completado 100%!";
+        const btn = document.getElementById("bulkToggleBtn");
+        btn.textContent = "Completado";
+        btn.style.background = "#22c55e";
+        btn.style.color = "#fff";
+        return;
+      }
+
+      const song = bulkQueue[bulkCurrentIndex];
+      document.getElementById("bulkStatusText").textContent = `[${bulkCurrentIndex + 1}/${bulkQueue.length}] ${song.title.substring(0, 18)}...`;
+
+      try {
+        const streamUrl = `${activeServerBase}/api/stream/${song.id}?format=320k`;
+        const res = await fetch(streamUrl);
+        if (!res.ok) throw new Error("Stream error");
+        const audioBlob = await res.blob();
+        bulkDownloadedBytes += audioBlob.size;
+
+        let coverBlob = null;
+        if (song.has_cover) {
+          try {
+            const cRes = await fetch(`${activeServerBase}/api/cover/${song.id}`);
+            if (cRes.ok) coverBlob = await cRes.blob();
+          } catch(e) {}
+        }
+
+        const record = {
+          id: song.id,
+          song: song,
+          audioBlob: audioBlob,
+          coverBlob: coverBlob,
+          size: audioBlob.size,
+          downloadedAt: Date.now()
+        };
+
+        const tx = dbInstance.transaction(STORE_NAME, "readwrite");
+        tx.objectStore(STORE_NAME).put(record);
+
+        tx.oncomplete = () => {
+          downloadedSongIds.add(song.id);
+          bulkCurrentIndex++;
+          actualizarBulkStatsUI();
+
+          const songRow = document.getElementById(`song-${song.id}`);
+          if (songRow) {
+            const meta = songRow.querySelector(".song-meta");
+            if (meta && !meta.querySelector(".download-badge")) {
+              const b = document.createElement("span");
+              b.className = "download-badge";
+              b.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+              meta.insertBefore(b, meta.firstChild);
+            }
+          }
+
+          setTimeout(() => ejecutarSiguientePistaBulk(), 100);
+        };
+      } catch (err) {
+        console.warn("Fallo en pista bulk:", err);
+        bulkCurrentIndex++;
+        setTimeout(() => ejecutarSiguientePistaBulk(), 250);
+      }
+    }
+
+    function actualizarBulkStatsUI() {
+      const total = allSongs.length;
+      const downloaded = downloadedSongIds.size;
+      const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+
+      const pBar = document.getElementById("bulkProgressBar");
+      if (pBar) pBar.style.width = `${pct}%`;
+
+      const pTxt = document.getElementById("bulkPercentText");
+      if (pTxt) pTxt.textContent = `${pct}%`;
+
+      const sizeMB = (downloaded * 10.5).toFixed(1);
+      const sizeGB = (sizeMB / 1024).toFixed(2);
+      const sTxt = document.getElementById("bulkSizeText");
+      if (sTxt) sTxt.textContent = `${downloaded} de ${total} pistas guardadas (${sizeGB} GB / ~12.6 GB)`;
+
+      const lbl = document.getElementById("labelDownloadAll");
+      if (lbl) {
+        if (downloaded === total && total > 0) {
+          lbl.textContent = "Biblioteca Completa (✓)";
+        } else if (isBulkDownloading) {
+          lbl.textContent = `Descargando (${pct}%)`;
+        } else {
+          lbl.textContent = `Descargar Todo (${pct}%)`;
+        }
+      }
+    }
+
+</script>
+
+  <!-- Bulk Download Modal / Sheet -->
+  <div class="bulk-modal-overlay" id="bulkModalOverlay" onclick="cerrarBulkModal(event)">
+    <div class="bulk-modal-content" onclick="event.stopPropagation()">
+      <div class="bulk-modal-header">
+        <div class="bulk-modal-title">Descarga de Biblioteca</div>
+        <button class="bulk-modal-close" onclick="cerrarBulkModal()">✕</button>
+      </div>
+      <div class="bulk-modal-subtitle">Audio AAC 320 kbps · Máx. 15 GB · Escucha sin internet</div>
+      
+      <div class="bulk-progress-wrap">
+        <div class="bulk-progress-bar" id="bulkProgressBar"></div>
+      </div>
+      
+      <div class="bulk-stats-row">
+        <span id="bulkStatusText">Preparado para descargar...</span>
+        <span id="bulkPercentText">0%</span>
+      </div>
+      <div class="bulk-size-text" id="bulkSizeText">0 MB / ~12.6 GB estimados</div>
+
+      <div class="bulk-actions">
+        <button class="bulk-btn bulk-btn-primary" id="bulkToggleBtn" onclick="toggleBulkDownload()">Iniciar Descarga</button>
+        <button class="bulk-btn bulk-btn-cancel" onclick="cancelarBulkDownload()">Cancelar</button>
+      </div>
+    </div>
+  </div>
 </body>
+
 </html>
