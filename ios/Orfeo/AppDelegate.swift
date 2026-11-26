@@ -10,8 +10,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // 1. Audio Session for Continuous Background Playback
+        // NOTE: AVAudioSessionCategoryPlayback natively routes to Bluetooth and AirPlay.
+        // DO NOT pass allowBluetooth or allowBluetoothA2DP here as it raises an uncatchable Objective-C NSInvalidArgumentException!
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("[Orfeo] AudioSession setup error: \(error)")
@@ -109,13 +111,24 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKNavigation
             return
         }
 
-        // Priority 2: Shipped bundle inside IPA bundle
+        // Priority 2: Root bundle index.html
+        if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html") {
+            let fileUrl = URL(fileURLWithPath: htmlPath)
+            webView.loadFileURL(fileUrl, allowingReadAccessTo: fileUrl.deletingLastPathComponent())
+            return
+        }
+
+        // Priority 3: frontend/index.html inside bundle
         if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html", inDirectory: "frontend") {
             let fileUrl = URL(fileURLWithPath: htmlPath)
             webView.loadFileURL(fileUrl, allowingReadAccessTo: fileUrl.deletingLastPathComponent())
-        } else if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html") {
-            let fileUrl = URL(fileURLWithPath: htmlPath)
-            webView.loadFileURL(fileUrl, allowingReadAccessTo: fileUrl.deletingLastPathComponent())
+            return
+        }
+
+        // Priority 4: Live Tailscale Stream from Odiseo (Fallback)
+        if let liveUrl = URL(string: "http://100.117.169.38:4550/static/mobile/index.html") {
+            print("[Orfeo] Cargando fallback en vivo desde Odiseo...")
+            webView.load(URLRequest(url: liveUrl))
         }
     }
 
