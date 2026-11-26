@@ -6,25 +6,29 @@ import WebKit
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
-    var webView: WKWebView!
+    var mainVC: MainViewController?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // 1. Configure AVAudioSession for background music playback
+        // 1. Audio Session for Continuous Background Playback
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Failed to set AVAudioSession category: \(error)")
+            print("[Orfeo] AudioSession setup error: \(error)")
         }
 
-        // 2. Setup MPRemoteCommandCenter (iOS Lockscreen / Control Center / Carplay)
+        // 2. Lockscreen & Control Center Remote Controls
         setupRemoteCommands()
 
-        // 3. Initialize Main Window & Native WebView Shell
+        // 3. Initialize Main View Controller
         window = UIWindow(frame: UIScreen.main.bounds)
-        let viewController = MainViewController()
-        window?.rootViewController = viewController
+        let vc = MainViewController()
+        self.mainVC = vc
+        window?.rootViewController = vc
         window?.makeKeyAndVisible()
+
+        // 4. Background Silent OTA Check against Odiseo (No cables required!)
+        OrfeoOTAUpdater.shared.checkForUpdates(mainVC: vc)
 
         return true
     }
@@ -60,13 +64,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func notifyWeb(_ js: String) {
-        DispatchQueue.main.async {
-            guard let vc = self.window?.rootViewController as? MainViewController else { return }
-            vc.webView.evaluateJavaScript(js, completionHandler: nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.mainVC?.webView?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 }
 
+// MARK: - Main UI & WKWebView Shell
 class MainViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate {
     var webView: WKWebView!
 
@@ -91,15 +95,39 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKNavigation
         webView.navigationDelegate = self
         view.addSubview(webView)
 
-        // Load bundled frontend assets
+        loadActiveBundle()
+    }
+
+    func loadActiveBundle() {
+        // Priority 1: Updated bundle in Documents (downloaded via OTA)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let otaIndex = docs.appendingPathComponent("OrfeoLive/index.html")
+
+        if FileManager.default.fileExists(atPath: otaIndex.path) {
+            print("[Orfeo OTA] Cargando versión actualizada desde Documents/OrfeoLive")
+            webView.loadFileURL(otaIndex, allowingReadAccessTo: docs)
+            return
+        }
+
+        // Priority 2: Shipped bundle inside IPA bundle
         if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html", inDirectory: "frontend") {
             let fileUrl = URL(fileURLWithPath: htmlPath)
             webView.loadFileURL(fileUrl, allowingReadAccessTo: fileUrl.deletingLastPathComponent())
-        } else {
-            // Fallback load local index.html directly
-            if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html") {
-                let fileUrl = URL(fileURLWithPath: htmlPath)
-                webView.loadFileURL(fileUrl, allowingReadAccessTo: fileUrl.deletingLastPathComponent())
+        } else if let htmlPath = Bundle.main.path(forResource: "index", ofType: "html") {
+            let fileUrl = URL(fileURLWithPath: htmlPath)
+            webView.loadFileURL(fileUrl, allowingReadAccessTo: fileUrl.deletingLastPathComponent())
+        }
+    }
+
+    func reloadWithUpdatedBundle() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let otaIndex = docs.appendingPathComponent("OrfeoLive/index.html")
+            if FileManager.default.fileExists(atPath: otaIndex.path) {
+                UIView.transition(with: self.webView, duration: 0.35, options: .transitionCrossDissolve, animations: {
+                    self.webView.loadFileURL(otaIndex, allowingReadAccessTo: docs)
+                }, completion: nil)
             }
         }
     }
@@ -128,5 +156,73 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKNavigation
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return .lightContent
+    }
+}
+
+// MARK: - Silent Wireless OTA Updater from Odiseo
+class OrfeoOTAUpdater {
+    static let shared = OrfeoOTAUpdater()
+
+    private let primaryVersionUrl = "http://100.117.169.38:4550/static/mobile/version.json"
+    private let fallbackVersionUrl = "http://192.168.100.90:4550/static/mobile/version.json"
+    private let otaBuildKey = "orfeo_installed_ota_build"
+
+    func checkForUpdates(mainVC: MainViewController?) {
+        guard let url = URL(string: primaryVersionUrl) else { return }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3.0
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+            guard let self = self, let data = data, err == nil else { return }
+
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let remoteBuild = json["build"] as? Int,
+                   let bundleRelative = json["bundle_url"] as? String {
+                    
+                    let localBuild = UserDefaults.standard.integer(forKey: self.otaBuildKey)
+                    print("[Orfeo OTA] Build local: \(localBuild), Build en Odiseo: \(remoteBuild)")
+
+                    if remoteBuild > localBuild {
+                        print("[Orfeo OTA] Descargando actualización silenciosa #\(remoteBuild)...")
+                        self.downloadBundle(relativeUrl: bundleRelative, newBuild: remoteBuild, mainVC: mainVC)
+                    }
+                }
+            } catch {
+                print("[Orfeo OTA] JSON error: \(error)")
+            }
+        }.resume()
+    }
+
+    private func downloadBundle(relativeUrl: String, newBuild: Int, mainVC: MainViewController?) {
+        let bundleFullUrl = "http://100.117.169.38:4550\(relativeUrl)"
+        guard let url = URL(string: bundleFullUrl) else { return }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5.0
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, err in
+            guard let self = self, let data = data, err == nil else { return }
+
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let liveDir = docs.appendingPathComponent("OrfeoLive")
+            let destFile = liveDir.appendingPathComponent("index.html")
+
+            do {
+                try FileManager.default.createDirectory(at: liveDir, withIntermediateDirectories: true)
+                try data.write(to: destFile, options: .atomic)
+
+                UserDefaults.standard.set(newBuild, forKey: self.otaBuildKey)
+                print("[Orfeo OTA] ¡Actualización #\(newBuild) guardada con éxito en Documents/OrfeoLive!")
+
+                // Seamlessly reload to apply new UI & Nest Mini fixes
+                mainVC?.reloadWithUpdatedBundle()
+            } catch {
+                print("[Orfeo OTA] File write error: \(error)")
+            }
+        }.resume()
     }
 }
