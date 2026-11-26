@@ -46,6 +46,90 @@
         radial-gradient(circle at 90% 85%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
     }
 
+    /* PANTALLA DE CARGA / SPLASH SCREEN */
+    .splash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #070a0e;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      transition: opacity 0.45s ease, visibility 0.45s ease;
+    }
+    .splash-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .splash-logo-wrap {
+      position: relative;
+      width: 110px;
+      height: 110px;
+      margin-bottom: 24px;
+    }
+    .splash-logo {
+      width: 110px;
+      height: 110px;
+      border-radius: 26px;
+      object-fit: cover;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.7);
+      border: 1.5px solid rgba(255, 255, 255, 0.18);
+    }
+    .splash-glow {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-radius: 26px;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.4) 0%, transparent 70%);
+      filter: blur(16px);
+      z-index: -1;
+      animation: pulseGlow 2.5s infinite alternate;
+    }
+    @keyframes pulseGlow {
+      from { opacity: 0.4; transform: scale(0.95); }
+      to { opacity: 0.9; transform: scale(1.15); }
+    }
+    .splash-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    .splash-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 30px;
+    }
+    .splash-progress-bar-wrap {
+      width: 220px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .splash-progress-bar {
+      width: 15%;
+      height: 100%;
+      background: linear-gradient(90deg, #38bdf8 0%, #22c55e 100%);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    .splash-status-text {
+      font-size: 12px;
+      color: #94a3b8;
+      font-variant-numeric: tabular-nums;
+    }
+
     /* Dynamic Island Bar */
     .dynamic-island-container {
       position: fixed;
@@ -179,7 +263,6 @@
       border-radius: 14px;
       padding: 10px 14px;
       font-size: 13px;
-      animation: fadeIn 0.3s ease;
     }
     .mix-banner-close {
       background: rgba(255, 255, 255, 0.15);
@@ -282,6 +365,8 @@
       border-radius: 14px;
       overflow: hidden;
       background: transparent;
+      content-visibility: auto;
+      contain-intrinsic-size: 62px;
     }
     .swipe-bg-queue {
       position: absolute;
@@ -628,7 +713,7 @@
       cursor: pointer;
     }
 
-    /* ACTION SHEET (MENU 3 PUNTOS) */
+    /* ACTION SHEET */
     .sheet-overlay {
       position: fixed;
       top: 0;
@@ -715,7 +800,7 @@
       background: rgba(239, 68, 68, 0.15);
     }
 
-    /* DIALOGO DE CONFIRMACIÓN DE BORRADO */
+    /* CONFIRMACION DE BORRADO */
     .confirm-overlay {
       position: fixed;
       top: 0;
@@ -788,7 +873,7 @@
       box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
     }
 
-    /* QUEUE DRAWER (COLA DE REPRODUCCIÓN) */
+    /* QUEUE DRAWER */
     .queue-sheet {
       position: fixed;
       top: 0;
@@ -897,6 +982,20 @@
 </head>
 <body>
 
+  <!-- PANTALLA DE CARGA / SPLASH SCREEN DE PRECARGA -->
+  <div class="splash-screen" id="splashScreen">
+    <div class="splash-logo-wrap">
+      <div class="splash-glow"></div>
+      <img src="icon.png" class="splash-logo" alt="Orfeo" onerror="this.src='https://img.icons8.com/fluency/96/music.png'">
+    </div>
+    <div class="splash-title">Orfeo Mobile</div>
+    <div class="splash-subtitle">Motor Rust Bit-Perfect · Odiseo</div>
+    <div class="splash-progress-bar-wrap">
+      <div class="splash-progress-bar" id="splashBar"></div>
+    </div>
+    <div class="splash-status-text" id="splashStatus">Conectando con Odiseo por Tailscale...</div>
+  </div>
+
   <!-- Dynamic Island Badge -->
   <div class="dynamic-island-container" id="islandContainer" onclick="toggleNowPlayingModal(true)">
     <div class="dynamic-island" id="dynamicIsland">
@@ -929,9 +1028,9 @@
           </svg>
           <span id="queueBadge">Cola</span>
         </button>
-        <div class="status-pill" id="statusPill" onclick="verificarConexion()">
+        <div class="status-pill" id="statusPill" onclick="verificarConexion(true)">
           <span style="font-size: 8px;">●</span>
-          <span id="statusLabel">Odiseo Live</span>
+          <span id="statusLabel">Tailscale Live</span>
         </div>
       </div>
     </header>
@@ -1097,7 +1196,7 @@
     </div>
   </div>
 
-  <!-- ACTION SHEET (MENU 3 PUNTOS) -->
+  <!-- ACTION SHEET -->
   <div class="sheet-overlay" id="sheetOverlay" onclick="cerrarMenuCancion()">
     <div class="action-sheet" onclick="event.stopPropagation()">
       <div class="sheet-header">
@@ -1145,7 +1244,7 @@
     </div>
   </div>
 
-  <!-- QUEUE DRAWER (COLA DE REPRODUCCIÓN) -->
+  <!-- QUEUE DRAWER -->
   <div class="queue-sheet" id="queueSheet">
     <div class="queue-header">
       <div style="display:flex; align-items:center; gap:8px;">
@@ -1223,17 +1322,17 @@
   <audio id="audioPlayer" preload="auto" playsinline webkit-playsinline></audio>
 
   <script>
-    // --- CONFIGURACIÓN DE RED Y SERVIDOR ODISEO ---
+    // --- CONFIGURACIÓN DE RED RESILIENTE (TAILSCALE 24/7 + LAN FALLBACK) ---
     const TAILSCALE_BASE = "http://100.117.169.38:4550";
     const LOCAL_LAN_BASE = "http://192.168.100.92:4550";
-    let activeServerBase = (window.location.protocol.startsWith("http") && !window.location.host.includes("localhost"))
-      ? window.location.origin
-      : TAILSCALE_BASE;
+    
+    // Por defecto, siempre usar Tailscale porque funciona tanto en Wi-Fi como en Datos Móviles (4G/5G)
+    let activeServerBase = TAILSCALE_BASE;
 
     // --- ESTADO GLOBAL ---
     let allSongs = [];
     let filteredSongs = [];
-    let playbackQueue = []; // Cola personalizada de reproducción
+    let playbackQueue = [];
     let currentIndex = -1;
     let menuSongTarget = null;
     let isPlaying = false;
@@ -1247,46 +1346,109 @@
     preloadAudio.preload = "auto";
     let preloadedId = null;
 
-    // --- INICIALIZACIÓN ---
+    // --- DETECTOR DE CAMBIO DE RED (WIFI <-> RED MÓVIL 5G) ---
+    window.addEventListener("online", () => {
+      console.log("[Red] Dispositivo en línea. Re-verificando ruta a Odiseo...");
+      showToast("Conexión restaurada");
+      verificarConexion(false);
+    });
+
+    window.addEventListener("offline", () => {
+      console.warn("[Red] Conexión perdida.");
+      showToast("Sin conexión de red");
+      document.getElementById("statusLabel").textContent = "Sin Red";
+      document.getElementById("statusPill").style.color = "#ef4444";
+    });
+
+    // --- INICIALIZACIÓN CON PANTALLA DE CARGA ---
     window.addEventListener("DOMContentLoaded", () => {
-      determinarServidorOptimo();
+      iniciarCargaConSplash();
       setupAudioEvents();
     });
 
-    async function determinarServidorOptimo() {
+    async function updateSplashProgress(pct, msg) {
+      document.getElementById("splashBar").style.width = `${pct}%`;
+      document.getElementById("splashStatus").textContent = msg;
+    }
+
+    async function iniciarCargaConSplash() {
+      updateSplashProgress(25, "Verificando enlace Tailscale...");
+
+      // Cargar caché local inmediato si existe para 0 ms de retraso
+      const cached = localStorage.getItem("orfeo_library_cache");
+      if (cached) {
+        try {
+          allSongs = JSON.parse(cached);
+          filteredSongs = [...allSongs];
+          renderizarCanciones();
+        } catch(e) {}
+      }
+
+      await verificarConexion(false);
+      updateSplashProgress(60, "Sincronizando biblioteca (1,237 pistas)...");
+
+      await cargarBiblioteca();
+      updateSplashProgress(90, "Inicializando motor de streaming FLAC...");
+
+      setTimeout(() => {
+        updateSplashProgress(100, "¡Listo!");
+        setTimeout(() => {
+          document.getElementById("splashScreen").classList.add("hidden");
+        }, 350);
+      }, 250);
+    }
+
+    async function verificarConexion(mostrarToast) {
+      // Intentar LAN local por 400ms solo si estamos en Wi-Fi
+      let isLanWorking = false;
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 600);
+        const tid = setTimeout(() => ctrl.abort(), 400);
         const res = await fetch(`${LOCAL_LAN_BASE}/api/songs`, { signal: ctrl.signal });
-        clearTimeout(timeout);
+        clearTimeout(tid);
         if (res.ok) {
           activeServerBase = LOCAL_LAN_BASE;
-          document.getElementById("statusLabel").textContent = "LAN Odiseo (0 ms)";
+          document.getElementById("statusLabel").textContent = "LAN (0 ms)";
+          isLanWorking = true;
+          if (mostrarToast) showToast("Conectado por LAN local ultra rápida");
         }
       } catch (e) {
-        activeServerBase = TAILSCALE_BASE;
-        document.getElementById("statusLabel").textContent = "Tailscale Live";
+        // En red móvil o fuera de casa, LAN falla inmediatamente
       }
-      cargarBiblioteca();
+
+      if (!isLanWorking) {
+        // Usar Tailscale que funciona 100% en 4G/5G y en cualquier Wi-Fi
+        activeServerBase = TAILSCALE_BASE;
+        document.getElementById("statusLabel").textContent = "Tailscale 5G";
+        if (mostrarToast) showToast("Conectado por Tailscale");
+      }
     }
 
     async function cargarBiblioteca() {
       try {
-        const res = await fetch(`${activeServerBase}/api/songs`);
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 6000);
+        const res = await fetch(`${activeServerBase}/api/songs`, { signal: ctrl.signal });
+        clearTimeout(tid);
         const data = await res.json();
         allSongs = data.songs || [];
         filteredSongs = [...allSongs];
+        localStorage.setItem("orfeo_library_cache", JSON.stringify(allSongs));
+
         document.getElementById("songCountText").textContent = `${allSongs.length} pistas disponibles`;
         renderizarCanciones();
-        showToast(`✓ ${allSongs.length} canciones cargadas`);
       } catch (err) {
-        console.error("Error al cargar canciones:", err);
-        showToast("Error de conexión con Odiseo");
-        document.getElementById("songCountText").textContent = "Sin conexión a Odiseo";
+        console.warn("Fallo carga directa, probando Tailscale de respaldo:", err);
+        if (activeServerBase !== TAILSCALE_BASE) {
+          activeServerBase = TAILSCALE_BASE;
+          cargarBiblioteca();
+        } else {
+          showToast("Error de conexión con Odiseo");
+        }
       }
     }
 
-    // --- RENDERIZADO DE CANCIONES CON SOPORTE DE SWIPE ---
+    // --- RENDERIZADO ROBUSTO CON BÚSQUEDA DIRECTA POR ID ---
     function renderizarCanciones() {
       const container = document.getElementById("songList");
       if (filteredSongs.length === 0) {
@@ -1294,14 +1456,15 @@
         return;
       }
 
-      const limit = Math.min(filteredSongs.length, 300);
+      // Con content-visibility: auto en CSS, podemos renderizar la lista completa sin cortes ni bugs de índice!
       let html = "";
-      for (let i = 0; i < limit; i++) {
+      for (let i = 0; i < filteredSongs.length; i++) {
         const s = filteredSongs[i];
-        const isActive = (currentIndex === i);
+        const isActive = (currentIndex !== -1 && filteredSongs[currentIndex] && filteredSongs[currentIndex].id === s.id);
         const coverSrc = s.has_cover ? `${activeServerBase}/api/cover/${s.id}` : "icon.png";
         const durationFormatted = formatTime(s.duration || 0);
 
+        // CLAVE: Se pasa '${s.id}' exactamente, eliminando cualquier bug de índice al hacer scroll!
         html += `
           <div class="song-row-wrapper" id="row-${s.id}">
             <div class="swipe-bg-queue">
@@ -1309,9 +1472,8 @@
             </div>
             <div class="song-item ${isActive ? 'active' : ''}" 
                  id="song-${s.id}"
-                 onclick="seleccionarCancion(${i})"
-                 data-id="${s.id}"
-                 data-idx="${i}">
+                 onclick="seleccionarPorId('${s.id}')"
+                 data-id="${s.id}">
               <img class="song-cover-thumb" src="${coverSrc}" loading="lazy" alt="Cover" onerror="this.src='icon.png'">
               <div class="song-details">
                 <div class="song-title">${escapeHtml(s.title)}</div>
@@ -1338,7 +1500,7 @@
       attachSwipeEvents();
     }
 
-    // --- GESTOS DE DESLIZAMIENTO TÁCTIL (SWIPE TO QUEUE) ---
+    // --- GESTOS DE DESLIZAMIENTO TÁCTIL ---
     function attachSwipeEvents() {
       const rows = document.querySelectorAll(".song-item");
       rows.forEach(item => {
@@ -1356,7 +1518,7 @@
           if (!isSwiping) return;
           currentX = e.touches[0].clientX;
           const diff = currentX - startX;
-          if (diff > 0) { // Solo deslizamiento a la derecha
+          if (diff > 0) {
             const drag = Math.min(diff, 100);
             item.style.transform = `translateX(${drag}px)`;
           }
@@ -1369,7 +1531,6 @@
           const diff = currentX - startX;
 
           if (diff > 75) {
-            // Acción: Agregar a la cola
             const songId = item.getAttribute("data-id");
             const song = allSongs.find(s => s.id === songId);
             if (song) {
@@ -1385,7 +1546,7 @@
       triggerHaptic();
       playbackQueue.push(song);
       actualizarBadgeCola();
-      showToast(`✓ "${song.title.substring(0, 20)}..." agregada a la cola`);
+      showToast(`✓ "${song.title.substring(0, 20)}..." a la cola`);
     }
 
     function actualizarBadgeCola() {
@@ -1394,14 +1555,18 @@
       document.getElementById("queueCountLabel").textContent = `(${playbackQueue.length} pistas)`;
     }
 
-    // --- MOTOR DE REPRODUCCIÓN ---
-    function seleccionarCancion(index) {
-      if (index < 0 || index >= filteredSongs.length) return;
-      currentIndex = index;
+    // --- SELECCIÓN Y REPRODUCCIÓN POR ID EXACTO ---
+    function seleccionarPorId(songId) {
+      // Localizar el índice real en filteredSongs por su ID único de base de datos
+      const idx = filteredSongs.findIndex(s => s.id === songId);
+      if (idx === -1) return;
+      currentIndex = idx;
       reproducirPistaActual();
+      renderizarCanciones();
     }
 
     function reproducirPistaActual() {
+      if (currentIndex < 0 || currentIndex >= filteredSongs.length) return;
       const s = filteredSongs[currentIndex];
       if (!s) return;
 
@@ -1415,24 +1580,31 @@
 
       // Reproducción Local
       const streamUrl = `${activeServerBase}/api/stream/${s.id}`;
-      if (audio.src !== streamUrl) {
-        audio.src = streamUrl;
-      }
+      audio.src = streamUrl;
       
-      audio.play().then(() => {
-        isPlaying = true;
-        actualizarUI(s);
-        actualizarMediaSession(s);
-        notifySwiftNowPlaying(s, true);
-      }).catch(err => {
-        console.warn("Autoplay:", err);
-      });
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          isPlaying = true;
+          actualizarUI(s);
+          actualizarMediaSession(s);
+          notifySwiftNowPlaying(s, true);
+        }).catch(err => {
+          console.warn("Fallo play local, intentando switch de red:", err);
+          // Si falló por cambio de red (ej. de Wi-Fi a 5G), conmutar a Tailscale y reintentar
+          if (activeServerBase !== TAILSCALE_BASE) {
+            activeServerBase = TAILSCALE_BASE;
+            audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
+            audio.play().catch(console.error);
+          }
+        });
+      }
     }
 
     function togglePlay() {
       triggerHaptic();
       if (currentIndex === -1) {
-        if (filteredSongs.length > 0) seleccionarCancion(0);
+        if (filteredSongs.length > 0) seleccionarPorId(filteredSongs[0].id);
         return;
       }
 
@@ -1454,6 +1626,9 @@
           isPlaying = true;
           actualizarBotonesPlay();
           notifySwiftNowPlaying(filteredSongs[currentIndex], true);
+        }).catch(err => {
+          console.warn("Error al reanudar:", err);
+          reproducirPistaActual();
         });
       } else {
         audio.pause();
@@ -1466,19 +1641,10 @@
     function nextTrack() {
       triggerHaptic();
       
-      // Si hay elementos en la cola personalizada, reproducir el primero
       if (playbackQueue.length > 0) {
         const nextFromQueue = playbackQueue.shift();
         actualizarBadgeCola();
-        const foundIdx = filteredSongs.findIndex(s => s.id === nextFromQueue.id);
-        if (foundIdx !== -1) {
-          currentIndex = foundIdx;
-        } else {
-          filteredSongs.unshift(nextFromQueue);
-          currentIndex = 0;
-        }
-        reproducirPistaActual();
-        renderizarCanciones();
+        seleccionarPorId(nextFromQueue.id);
         return;
       }
 
@@ -1514,7 +1680,7 @@
       }
     }
 
-    // --- EVENTOS DE AUDIO ---
+    // --- EVENTOS DE AUDIO Y AUTO-RECUPERACIÓN EN CAMBIO DE RED ---
     function setupAudioEvents() {
       audio.addEventListener("play", () => {
         isPlaying = true;
@@ -1534,6 +1700,22 @@
           audio.play();
         } else {
           nextTrack();
+        }
+      });
+
+      // AUTO-RECUPERACIÓN: Si se corta al cambiar de Wi-Fi a Red Móvil
+      audio.addEventListener("error", (e) => {
+        console.warn("[Audio Error] Conexión interrumpida:", e);
+        if (activeServerBase !== TAILSCALE_BASE) {
+          activeServerBase = TAILSCALE_BASE;
+          showToast("Reconectando vía Tailscale 5G...");
+          document.getElementById("statusLabel").textContent = "Tailscale 5G";
+          if (currentIndex !== -1 && filteredSongs[currentIndex]) {
+            const s = filteredSongs[currentIndex];
+            audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
+            audio.load();
+            audio.play().catch(console.error);
+          }
         }
       });
 
@@ -1634,13 +1816,7 @@
     function accionReproducir() {
       cerrarMenuCancion();
       if (!menuSongTarget) return;
-      const idx = filteredSongs.findIndex(s => s.id === menuSongTarget.id);
-      if (idx !== -1) {
-        seleccionarCancion(idx);
-      } else {
-        filteredSongs.unshift(menuSongTarget);
-        seleccionarCancion(0);
-      }
+      seleccionarPorId(menuSongTarget.id);
     }
 
     function accionReproducirSiguiente() {
@@ -1649,7 +1825,7 @@
       triggerHaptic();
       playbackQueue.unshift(menuSongTarget);
       actualizarBadgeCola();
-      showToast(`⏭️ Sonará a continuación: "${menuSongTarget.title.substring(0, 22)}..."`);
+      showToast(`⏭️ Siguiente: "${menuSongTarget.title.substring(0, 22)}..."`);
     }
 
     function accionAgregarCola() {
@@ -1669,33 +1845,28 @@
       triggerHaptic();
       const artist = baseSong.artist.trim();
       
-      // Buscar canciones del mismo artista
       let artistSongs = allSongs.filter(s => s.artist && s.artist.toLowerCase().includes(artist.toLowerCase()));
       
-      // Si hay pocas del artista, agregar aleatorias complementarias
       if (artistSongs.length < 15) {
         const others = allSongs.filter(s => !artistSongs.includes(s));
         const shuffledOthers = others.sort(() => 0.5 - Math.random()).slice(0, 25 - artistSongs.length);
         artistSongs = [...artistSongs, ...shuffledOthers];
       }
 
-      // Barajar el mix
       filteredSongs = artistSongs.sort(() => 0.5 - Math.random());
       
-      // Asegurar que la canción base quede de primera
       const baseIdx = filteredSongs.findIndex(s => s.id === baseSong.id);
       if (baseIdx !== -1) {
         filteredSongs.splice(baseIdx, 1);
       }
       filteredSongs.unshift(baseSong);
 
-      // Mostrar Banner de Mix
       document.getElementById("mixBannerText").textContent = `Mix: ${artist} (${filteredSongs.length} pistas)`;
       document.getElementById("mixBanner").style.display = "flex";
       document.getElementById("songCountText").textContent = `${filteredSongs.length} canciones en Mix`;
 
       renderizarCanciones();
-      seleccionarCancion(0);
+      seleccionarPorId(baseSong.id);
       showToast(`✨ Mix infinito de "${artist}" iniciado`);
     }
 
@@ -1737,10 +1908,10 @@
 
         if (res.ok && (data.ok || data.success)) {
           triggerHaptic();
-          // Eliminar de arrays en memoria
           allSongs = allSongs.filter(s => s.id !== targetId);
           filteredSongs = filteredSongs.filter(s => s.id !== targetId);
           playbackQueue = playbackQueue.filter(s => s.id !== targetId);
+          localStorage.setItem("orfeo_library_cache", JSON.stringify(allSongs));
           
           document.getElementById("songCountText").textContent = `${allSongs.length} pistas disponibles`;
           renderizarCanciones();
@@ -1748,15 +1919,14 @@
 
           showToast("🗑️ Canción eliminada permanentemente");
 
-          // Si era la que sonaba, pasar a la siguiente
           if (currentIndex !== -1 && filteredSongs[currentIndex] && filteredSongs[currentIndex].id === targetId) {
             nextTrack();
           }
         } else {
-          showToast(`Error al eliminar: ${data.error || "No autorizado"}`);
+          showToast(`Error: ${data.error || "No autorizado"}`);
         }
       } catch (err) {
-        showToast("Error de conexión al intentar eliminar");
+        showToast("Error de conexión al eliminar");
       }
     }
 
@@ -1810,10 +1980,7 @@
       const s = playbackQueue.splice(idx, 1)[0];
       actualizarBadgeCola();
       cerrarColaModal();
-      filteredSongs.unshift(s);
-      currentIndex = 0;
-      reproducirPistaActual();
-      renderizarCanciones();
+      seleccionarPorId(s.id);
     }
 
     function quitarDeCola(idx, event) {
@@ -2021,10 +2188,6 @@
       }
       document.getElementById("songCountText").textContent = `${filteredSongs.length} canciones`;
       renderizarCanciones();
-    }
-
-    function verificarConexion() {
-      determinarServidorOptimo();
     }
 
     // --- UTILIDADES ---
