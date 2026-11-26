@@ -375,13 +375,14 @@
       bottom: 0;
       width: 100%;
       background: linear-gradient(90deg, #0284c7 0%, #0369a1 100%);
-      display: flex;
+      display: none; /* Oculto por defecto: solo se muestra al deslizar intencionalmente */
       align-items: center;
       padding-left: 20px;
       color: #fff;
       font-size: 13px;
       font-weight: 600;
       gap: 6px;
+      z-index: 1;
     }
     .song-item {
       position: relative;
@@ -399,8 +400,8 @@
       background: rgba(255, 255, 255, 0.07);
     }
     .song-item.active {
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.25);
+      background: #141c2b !important;
+      border: 1px solid rgba(56, 189, 248, 0.4) !important;
     }
     .song-cover-thumb {
       width: 46px;
@@ -463,12 +464,20 @@
       background: transparent;
       border: none;
       color: var(--text-muted);
-      padding: 8px;
+      width: 44px;
+      height: 44px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       border-radius: 50%;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(255, 255, 255, 0.15);
+      z-index: 10;
+    }
+    .song-btn-dots:active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
     }
 
     /* Floating Mini Player */
@@ -1531,7 +1540,7 @@
     }
 
     // --- GESTOS DE DESLIZAMIENTO TÁCTIL ---
-        function attachSwipeEvents() {
+            function attachSwipeEvents() {
       const rows = document.querySelectorAll(".song-item");
       rows.forEach(item => {
         let startX = 0;
@@ -1542,6 +1551,10 @@
         let gestureChecked = false;
 
         item.addEventListener("touchstart", (e) => {
+          // Si el toque fue en los 3 puntos o acciones, NO interferir con el botón!
+          if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) {
+            return;
+          }
           startX = e.touches[0].clientX;
           startY = e.touches[0].clientY;
           currentX = startX;
@@ -1552,32 +1565,33 @@
         }, { passive: true });
 
         item.addEventListener("touchmove", (e) => {
+          if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
           currentX = e.touches[0].clientX;
           currentY = e.touches[0].clientY;
           const diffX = currentX - startX;
           const diffY = currentY - startY;
 
-          // Verificar intención de deslizamiento (prevenir activación accidental al mantener presionado)
-          if (!gestureChecked && (Math.abs(diffX) > 14 || Math.abs(diffY) > 14)) {
+          if (!gestureChecked && (Math.abs(diffX) > 12 || Math.abs(diffY) > 12)) {
             gestureChecked = true;
-            // Si el movimiento vertical es mayor, es scroll de lista -> NO deslizar!
             if (Math.abs(diffY) > Math.abs(diffX)) {
               isHorizontalSwipe = false;
               return;
             }
-            // Solo si se mueve intencionalmente a la derecha
-            if (diffX > 18) {
+            if (diffX > 15) {
               isHorizontalSwipe = true;
+              const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
+              if (bg) bg.style.display = "flex";
             }
           }
 
           if (isHorizontalSwipe && diffX > 0) {
-            const drag = Math.min(diffX - 18, 110);
+            const drag = Math.min(diffX - 15, 110);
             item.style.transform = `translateX(${drag}px)`;
           }
         }, { passive: true });
 
-        item.addEventListener("touchend", () => {
+        item.addEventListener("touchend", (e) => {
+          if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
           item.style.transition = "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)";
           const diffX = currentX - startX;
 
@@ -1590,6 +1604,11 @@
           }
 
           item.style.transform = "translateX(0px)";
+          setTimeout(() => {
+            const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
+            if (bg) bg.style.display = "none";
+          }, 260);
+
           isHorizontalSwipe = false;
           gestureChecked = false;
         });
@@ -1597,6 +1616,8 @@
         item.addEventListener("touchcancel", () => {
           item.style.transition = "transform 0.25s ease";
           item.style.transform = "translateX(0px)";
+          const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
+          if (bg) bg.style.display = "none";
           isHorizontalSwipe = false;
           gestureChecked = false;
         });
@@ -1743,7 +1764,7 @@
 
     
     // --- GESTO DE DESLIZAR HACIA ABAJO PARA CERRAR EL REPRODUCTOR ---
-    function setupNowPlayingDismissGesture() {
+        function setupNowPlayingDismissGesture() {
       const modal = document.getElementById("nowPlayingModal");
       let startY = 0;
       let startX = 0;
@@ -1752,8 +1773,7 @@
       let gestureChecked = false;
 
       modal.addEventListener("touchstart", (e) => {
-        // Ignorar si se está tocando el slider de progreso para no interferir
-        if (e.target.closest(".scrubber-slider") || e.target.closest(".np-btn-play")) return;
+        if (e.target.closest(".scrubber-slider") || e.target.closest(".np-btn-play") || e.target.closest(".np-btn")) return;
         startY = e.touches[0].clientY;
         startX = e.touches[0].clientX;
         currentY = startY;
@@ -1768,10 +1788,9 @@
         const diffY = currentY - startY;
         const diffX = currentX - startX;
 
-        if (!gestureChecked && (Math.abs(diffY) > 12 || Math.abs(diffX) > 12)) {
+        if (!gestureChecked && (Math.abs(diffY) > 8 || Math.abs(diffX) > 8)) {
           gestureChecked = true;
-          // Solo si el arrastre es predominantemente vertical y hacia abajo
-          if (diffY > 12 && Math.abs(diffY) > Math.abs(diffX)) {
+          if (diffY > 8 && Math.abs(diffY) > Math.abs(diffX)) {
             isDraggingDown = true;
           }
         }
@@ -1785,21 +1804,25 @@
         if (!isDraggingDown) return;
         isDraggingDown = false;
         gestureChecked = false;
-        modal.style.transition = "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)";
         const diffY = currentY - startY;
 
-        if (diffY > 100) {
-          // Deslizado suficiente -> Minimizar y volver a la lista
-          toggleNowPlayingModal(false);
+        if (diffY > 80) {
+          // Deslizado fluido: animar directamente hasta 100% sin pausas a media animación
+          modal.style.transition = "transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1)";
+          modal.style.transform = "translateY(100%)";
           setTimeout(() => {
+            modal.classList.remove("active");
+            modal.style.transition = "";
             modal.style.transform = "";
-          }, 350);
+          }, 280);
         } else {
-          // Rebotar a posición abierta
+          // Rebotar arriba suavemente
+          modal.style.transition = "transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1)";
           modal.style.transform = "translateY(0)";
           setTimeout(() => {
+            modal.style.transition = "";
             modal.style.transform = "";
-          }, 350);
+          }, 250);
         }
       });
     }
@@ -1912,10 +1935,13 @@
 
     // --- ACTION SHEET (MENU 3 PUNTOS) ---
     function abrirMenuCancion(songId, event) {
-      if (event) event.stopPropagation();
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
       triggerHaptic();
 
-      const song = allSongs.find(s => s.id === songId);
+      const song = allSongs.find(s => s.id === songId) || filteredSongs.find(s => s.id === songId);
       if (!song) return;
       menuSongTarget = song;
 
