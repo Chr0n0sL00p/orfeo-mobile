@@ -1513,6 +1513,8 @@
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
     let isScrubbing = false;
+    let playbackHistory = [];
+    let isNavigatingHistory = false;
 
     // --- MOTOR DE DESCARGA Y REPRODUCCIÓN OFFLINE EXCLUSIVA (INDEXEDDB) ---
     const DB_NAME = "OrfeoOfflineDB";
@@ -1996,6 +1998,13 @@
       // Localizar el índice real en filteredSongs por su ID único de base de datos
       const idx = filteredSongs.findIndex(s => s.id === songId);
       if (idx === -1) return;
+      if (currentIndex >= 0 && currentIndex < filteredSongs.length && !isNavigatingHistory) {
+        const cur = filteredSongs[currentIndex];
+        if (cur && cur.id !== songId) {
+          playbackHistory.push(cur.id);
+          if (playbackHistory.length > 60) playbackHistory.shift();
+        }
+      }
       currentIndex = idx;
       reproducirPistaActual();
       actualizarItemActivoUI(songId);
@@ -2138,8 +2147,26 @@
 
       if (filteredSongs.length === 0) return;
 
+      if (currentIndex >= 0 && currentIndex < filteredSongs.length && !isNavigatingHistory) {
+        const cur = filteredSongs[currentIndex];
+        if (cur) {
+          playbackHistory.push(cur.id);
+          if (playbackHistory.length > 60) playbackHistory.shift();
+        }
+      }
+
       if (isShuffle) {
-        currentIndex = Math.floor(Math.random() * filteredSongs.length);
+        if (filteredSongs.length === 1) {
+          currentIndex = 0;
+        } else {
+          let randIdx;
+          let attempts = 0;
+          do {
+            randIdx = Math.floor(Math.random() * filteredSongs.length);
+            attempts++;
+          } while (randIdx === currentIndex && filteredSongs.length > 1 && attempts < 10);
+          currentIndex = randIdx;
+        }
       } else {
         currentIndex = (currentIndex + 1) % filteredSongs.length;
       }
@@ -2153,6 +2180,23 @@
         audio.currentTime = 0;
         return;
       }
+
+      // En modo aleatorio (o normal), retroceder primero a la canción recién escuchada del historial
+      if (playbackHistory.length > 0) {
+        const prevId = playbackHistory.pop();
+        const targetIdx = filteredSongs.findIndex(s => s.id === prevId);
+        if (targetIdx >= 0) {
+          isNavigatingHistory = true;
+          currentIndex = targetIdx;
+          reproducirPistaActual();
+          actualizarItemActivoUI(prevId);
+          isNavigatingHistory = false;
+          return;
+        }
+      }
+
+      if (filteredSongs.length === 0) return;
+
       if (currentIndex > 0) {
         currentIndex--;
       } else {
