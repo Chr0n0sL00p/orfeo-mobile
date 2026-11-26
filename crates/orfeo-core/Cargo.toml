@@ -7,7 +7,7 @@ description = "High-performance Rust Core Engine for Orfeo Mobile (iOS / macOS /
 
 [lib]
 name = "orfeo_core"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["staticlib"]
 
 [dependencies]
 tokio = { version = "1.38", features = ["rt-multi-thread", "sync", "macros", "time"] }

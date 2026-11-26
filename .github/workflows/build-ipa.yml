@@ -23,6 +23,8 @@ jobs:
       - name: Build Rust Core (aarch64-apple-ios)
         run: |
           cargo build --release --target aarch64-apple-ios
+          rm -f target/aarch64-apple-ios/release/*.dylib || true
+          ls -lh target/aarch64-apple-ios/release/liborfeo_core.a
 
       - name: Prepare Frontend in iOS Project
         run: |
@@ -51,6 +53,8 @@ jobs:
           mkdir -p build/Payload/Orfeo.app/frontend
           cp frontend/index.html build/Payload/Orfeo.app/frontend/index.html
           cp frontend/index.html build/Payload/Orfeo.app/index.html
+          codesign --force --deep --sign - build/Payload/Orfeo.app
+          otool -L build/Payload/Orfeo.app/Orfeo
           cd build
           zip -r -q Orfeo_Rust.ipa Payload
           ls -lh Orfeo_Rust.ipa
