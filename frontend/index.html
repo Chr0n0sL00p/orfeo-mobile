@@ -2036,7 +2036,7 @@
               activeServerBase = TAILSCALE_BASE;
               const s = filteredSongs[currentIndex];
               if (s) {
-                audio.src = ;
+                audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
                 audio.load();
                 audio.play().catch(() => {});
               }
