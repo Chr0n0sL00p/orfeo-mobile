@@ -9,9 +9,9 @@ REMOTE_DIR="/opt/jarvis/music_app/static/mobile"
 echo ">>> [Orfeo OTA] Preparando despliegue Over-The-Air a Odiseo..."
 
 BUILD_NUM=$(date +%s)
-VERSION="2.3.7"
+VERSION="2.4.0"
 DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-CHANGELOG="Optimización de visibilidad modal, delegación táctil eficiente para gestos swipe y refuerzo de reactivación de AVAudioSession"
+CHANGELOG="Keep-Alive silencioso anti-suspensión de iOS en pausa y persistencia de última pista al reabrir"
 
 # Comprobar si se ejecuta localmente en Odiseo
 if [ -d "$REMOTE_DIR" ] && (ip -4 addr show 2>/dev/null | grep -q "${ODISEO_HOST}" || [ "$(hostname)" = "Odiseo" ]); then

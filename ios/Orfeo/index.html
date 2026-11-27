@@ -1534,6 +1534,10 @@
     let userManuallyPaused = false;
     let interruptionResumeTimer = null;
     let lastPauseTime = 0;
+    let lastStateSaveTime = 0;
+    let silentKeepAliveCtx = null;
+    let silentKeepAliveNode = null;
+    let silentKeepAliveTimer = null;
     let playbackStallCheckTimer = null;
     let searchDebounceTimer = null;
     let isSwipeDelegationSetup = false;
@@ -1541,6 +1545,113 @@
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
     let isScrubbing = false;
+
+    // --- KEEP-ALIVE SILENCIOSO WEB AUDIO (Previene suspensión en iOS al pausar) ---
+    function startWebSilentKeepAlive() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        if (!silentKeepAliveCtx) {
+          silentKeepAliveCtx = new AudioCtx();
+        }
+        if (silentKeepAliveCtx.state === "suspended") {
+          silentKeepAliveCtx.resume();
+        }
+        if (!silentKeepAliveNode) {
+          const buf = silentKeepAliveCtx.createBuffer(1, silentKeepAliveCtx.sampleRate, silentKeepAliveCtx.sampleRate);
+          silentKeepAliveNode = silentKeepAliveCtx.createBufferSource();
+          silentKeepAliveNode.buffer = buf;
+          silentKeepAliveNode.loop = true;
+          const gain = silentKeepAliveCtx.createGain();
+          gain.gain.value = 0.0001; // Inaudible
+          silentKeepAliveNode.connect(gain);
+          gain.connect(silentKeepAliveCtx.destination);
+          silentKeepAliveNode.start(0);
+          console.log("[KeepAlive Web] Audio silencioso activo: iOS mantendrá la app viva en segundo plano.");
+        }
+        if (silentKeepAliveTimer) clearTimeout(silentKeepAliveTimer);
+        silentKeepAliveTimer = setTimeout(() => {
+          stopWebSilentKeepAlive();
+        }, 30 * 60 * 1000); // 30 minutos de gracia máxima
+      } catch (e) {
+        console.warn("[KeepAlive Web Error]", e);
+      }
+    }
+
+    function stopWebSilentKeepAlive() {
+      if (silentKeepAliveTimer) {
+        clearTimeout(silentKeepAliveTimer);
+        silentKeepAliveTimer = null;
+      }
+      if (silentKeepAliveNode) {
+        try {
+          silentKeepAliveNode.stop();
+          silentKeepAliveNode.disconnect();
+        } catch (e) {}
+        silentKeepAliveNode = null;
+        console.log("[KeepAlive Web] Audio silencioso detenido.");
+      }
+    }
+
+    // --- PERSISTENCIA DE ESTADO DE REPRODUCCIÓN (0 ms Recuperación tras cierre) ---
+    function guardarEstadoReproduccion(songId, currentTime) {
+      try {
+        if (!songId) return;
+        localStorage.setItem("orfeo_last_song_id", songId);
+        localStorage.setItem("orfeo_last_position", String(currentTime || 0));
+        localStorage.setItem("orfeo_last_saved_at", String(Date.now()));
+      } catch (e) {}
+    }
+
+    function restaurarUltimaPistaSiExiste() {
+      try {
+        if (currentIndex !== -1 || allSongs.length === 0) return;
+        const lastSongId = localStorage.getItem("orfeo_last_song_id");
+        if (!lastSongId) return;
+
+        const idx = filteredSongs.findIndex(s => s.id === lastSongId);
+        if (idx === -1) return;
+
+        const s = filteredSongs[idx];
+        currentIndex = idx;
+        const lastPos = parseFloat(localStorage.getItem("orfeo_last_position") || "0");
+        const dur = Number(s.duration || 0);
+
+        console.log(`[State Restore] Restaurando última pista: "${s.title}" (${s.artist}) en ${lastPos}s`);
+
+        actualizarUI(s);
+        actualizarItemActivoUI(s.id);
+
+        if (lastPos > 0 && dur > 0) {
+          const pct = Math.min(100, Math.max(0, (lastPos / dur) * 100));
+          const fill = document.getElementById("scrubberBarFill");
+          const thumb = document.getElementById("scrubberThumb");
+          if (fill) fill.style.width = `${pct}%`;
+          if (thumb) thumb.style.left = `${pct}%`;
+          const tc = document.getElementById("timeCurrent");
+          const tr = document.getElementById("timeRemaining");
+          if (tc) tc.textContent = formatTime(lastPos);
+          if (tr) tr.textContent = `-${formatTime(Math.max(0, dur - lastPos))}`;
+        }
+
+        const finalUrl = `${activeServerBase}/api/stream/${s.id}`;
+        audio.src = finalUrl;
+        audio.load();
+        audio.addEventListener("loadedmetadata", () => {
+          if (lastPos > 0) {
+            try { audio.currentTime = lastPos; } catch(e) {}
+          }
+        }, { once: true });
+
+        notifySwiftNowPlaying(s, false);
+        if ("mediaSession" in navigator) {
+          actualizarMediaSession(s);
+          navigator.mediaSession.playbackState = "paused";
+        }
+      } catch (e) {
+        console.warn("[Restore Error]", e);
+      }
+    }
     let castState = {
       connected: false,
       state: "IDLE",
@@ -1682,6 +1793,7 @@
               allSongs = records.map(r => r.song);
               filteredSongs = [...allSongs];
               renderizarCanciones();
+              restaurarUltimaPistaSiExiste();
             }
             if (downloadedSongIds.size > 0) {
               document.getElementById("songCountText").textContent = `${downloadedSongIds.size} pistas en iPhone (Offline)`;
@@ -1814,6 +1926,7 @@
           allSongs.sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" }));
           filteredSongs = [...allSongs];
           renderizarCanciones();
+          restaurarUltimaPistaSiExiste();
         } catch(e) {}
       }
 
@@ -1872,6 +1985,7 @@
 
         document.getElementById("songCountText").textContent = `${allSongs.length} pistas disponibles`;
         renderizarCanciones();
+        restaurarUltimaPistaSiExiste();
       } catch (err) {
         console.warn("Fallo carga directa, probando Tailscale de respaldo:", err);
         if (activeServerBase !== TAILSCALE_BASE) {
@@ -2139,6 +2253,7 @@
         if (playPromise !== undefined) {
           playPromise.then(() => {
             if (currentRequestId !== playbackRequestId) return;
+            stopWebSilentKeepAlive();
             isPlaying = true;
             userManuallyPaused = false;
             wasInterruptedWhilePlaying = false;
@@ -2146,6 +2261,7 @@
             actualizarBotonesPlay();
             const s = filteredSongs[currentIndex];
             if (s) {
+              guardarEstadoReproduccion(s.id, startTime || audio.currentTime);
               actualizarMediaSession(s);
               notifySwiftNowPlaying(s, true);
             }
@@ -2237,12 +2353,13 @@
       }
 
       if (audio.paused) {
+        stopWebSilentKeepAlive();
         const curSec = (audio && !isNaN(audio.currentTime) && audio.currentTime > 0) ? audio.currentTime : 0;
-        // Si el stream estuvo pausado más de 12 segundos o el socket perdió datos:
-        const isStale = (audio.readyState < 2 || (Date.now() - lastPauseTime > 12000));
+        // Si el stream estuvo pausado más de 5 segundos o el socket perdió datos:
+        const isStale = (audio.readyState < 2 || (Date.now() - lastPauseTime > 5000));
 
         if (isStale && currentIndex !== -1 && activeOutput === "iphone") {
-          console.log("[Audio] Reconectando stream fresco tras pausa prolongada en:", curSec);
+          console.log("[Audio] Reconectando stream fresco tras pausa en:", curSec);
           reproducirPistaActual(curSec);
           return;
         }
@@ -2250,12 +2367,14 @@
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
+            stopWebSilentKeepAlive();
             isPlaying = true;
             userManuallyPaused = false;
             wasInterruptedWhilePlaying = false;
             actualizarBotonesPlay();
             const s = filteredSongs[currentIndex];
             if (s) {
+              guardarEstadoReproduccion(s.id, curSec);
               notifySwiftNowPlaying(s, true);
               if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
             }
@@ -2267,6 +2386,7 @@
         }
       } else {
         audio.pause();
+        startWebSilentKeepAlive();
         lastPauseTime = Date.now();
         if (playbackStallCheckTimer) {
           clearTimeout(playbackStallCheckTimer);
@@ -2276,8 +2396,10 @@
         userManuallyPaused = true;
         wasInterruptedWhilePlaying = false;
         actualizarBotonesPlay();
+        const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "none";
         const s = filteredSongs[currentIndex];
         if (s) {
+          guardarEstadoReproduccion(s.id, audio.currentTime);
           notifySwiftNowPlaying(s, false);
           if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
         }
@@ -2438,6 +2560,7 @@
     // --- EVENTOS DE AUDIO Y AUTO-RECUPERACIÓN EN CAMBIO DE RED ---
     function setupAudioEvents() {
       audio.addEventListener("play", () => {
+        stopWebSilentKeepAlive();
         isPlaying = true;
         actualizarBotonesPlay();
         const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "flex";
@@ -2459,9 +2582,11 @@
         const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "none";
         const s = filteredSongs[currentIndex];
         if (s) {
+          guardarEstadoReproduccion(s.id, audio.currentTime);
           notifySwiftNowPlaying(s, false);
           if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
         }
+        startWebSilentKeepAlive();
       });
 
       audio.addEventListener("ended", () => {
@@ -2474,6 +2599,7 @@
       });
 
       audio.addEventListener("playing", () => {
+        stopWebSilentKeepAlive();
         isPlaying = true;
         if (playbackStallCheckTimer) {
           clearTimeout(playbackStallCheckTimer);
@@ -2523,6 +2649,12 @@
 
         document.getElementById("timeCurrent").textContent = formatTime(current);
         document.getElementById("timeRemaining").textContent = `-${formatTime(Math.max(0, total - current))}`;
+
+        // Persistir progreso cada 4 segundos para recuperación instantánea si iOS cierra la app
+        if (Date.now() - lastStateSaveTime > 4000 && currentIndex !== -1 && filteredSongs[currentIndex]) {
+          lastStateSaveTime = Date.now();
+          guardarEstadoReproduccion(filteredSongs[currentIndex].id, current);
+        }
 
         // Pre-buffering gapless inteligente: solo en Wi-Fi/LAN y si no está descargada offline para ahorrar batería
         if (total > 20 && current >= (total - 12)) {
@@ -3268,6 +3400,7 @@
           if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
         }
         try { audio.pause(); } catch(e) {}
+        startWebSilentKeepAlive();
       } else {
         // Finalizó el audio/video externo
         if (wasInterruptedWhilePlaying && shouldResume !== false && !userManuallyPaused) {
@@ -3277,9 +3410,11 @@
             if (activeOutput === "nest") {
               if (!isPlaying) togglePlay();
             } else {
+              stopWebSilentKeepAlive();
               const playPromise = audio.play();
               if (playPromise !== undefined) {
                 playPromise.then(() => {
+                  stopWebSilentKeepAlive();
                   isPlaying = true;
                   userManuallyPaused = false;
                   actualizarBotonesPlay();
