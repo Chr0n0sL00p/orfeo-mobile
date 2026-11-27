@@ -114,11 +114,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let commandCenter = MPRemoteCommandCenter.shared()
 
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.notifyWeb("togglePlay()")
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                print("[Orfeo] AudioSession reactivation error on playCommand: \(error)")
+            }
+            self?.notifyWeb("togglePlay(true)")
             return .success
         }
 
         commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.notifyWeb("togglePlay(false)")
+            return .success
+        }
+
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {}
             self?.notifyWeb("togglePlay()")
             return .success
         }
@@ -142,7 +155,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     private func notifyWeb(_ js: String) {
         DispatchQueue.main.async { [weak self] in
-            self?.mainVC?.webView?.evaluateJavaScript(js, completionHandler: nil)
+            self?.mainVC?.webView?.evaluateJavaScript(js) { _, error in
+                if let error = error {
+                    print("[Orfeo Native] JS Error on '\(js)': \(error.localizedDescription)")
+                }
+            }
         }
     }
 }

@@ -66,6 +66,7 @@
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
+      display: none !important;
     }
     .splash-logo-wrap {
       position: relative;
@@ -531,12 +532,16 @@
       flex-direction: column;
       padding: calc(var(--safe-top) + 16px) 24px calc(var(--safe-bottom) + 20px) 24px;
       transform: translateY(100%);
-      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      visibility: hidden;
+      pointer-events: none;
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s;
       touch-action: none;
       overscroll-behavior: contain;
     }
     .now-playing-modal.active {
       transform: translateY(0);
+      visibility: visible;
+      pointer-events: auto;
     }
     .np-header {
       display: flex;
@@ -891,10 +896,14 @@
       flex-direction: column;
       padding: calc(var(--safe-top) + 16px) 20px calc(var(--safe-bottom) + 20px) 20px;
       transform: translateY(100%);
-      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      visibility: hidden;
+      pointer-events: none;
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.35s;
     }
     .queue-sheet.active {
       transform: translateY(0);
+      visibility: visible;
+      pointer-events: auto;
     }
     .queue-header {
       display: flex;
@@ -927,10 +936,14 @@
       flex-direction: column;
       gap: 18px;
       transform: translateY(100%);
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      visibility: hidden;
+      pointer-events: none;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s;
     }
     .cast-sheet.active {
       transform: translateY(0);
+      visibility: visible;
+      pointer-events: auto;
     }
     .cast-device-card {
       display: flex;
@@ -1166,7 +1179,7 @@
         <circle cx="11" cy="11" r="8"></circle>
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
       </svg>
-      <input type="text" class="search-input" id="searchInput" placeholder="Buscar canciones, artistas, álbumes..." oninput="filtrarCanciones(this.value)">
+      <input type="text" class="search-input" id="searchInput" placeholder="Buscar canciones, artistas, álbumes..." oninput="onSearchInput(this.value)">
       <button class="search-clear" id="searchClear" onclick="limpiarBusqueda()">✕</button>
     </div>
 
@@ -1520,6 +1533,10 @@
     let wasInterruptedWhilePlaying = false;
     let userManuallyPaused = false;
     let interruptionResumeTimer = null;
+    let lastPauseTime = 0;
+    let playbackStallCheckTimer = null;
+    let searchDebounceTimer = null;
+    let isSwipeDelegationSetup = false;
     let isShuffle = false;
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
@@ -1778,6 +1795,7 @@
       setupAudioEvents();
       setupCustomScrubber();
       setupNowPlayingDismissGesture();
+      setupSwipeDelegation();
     });
 
     async function updateSplashProgress(pct, msg) {
@@ -1916,97 +1934,94 @@
         `;
       }
       container.innerHTML = html;
-      attachSwipeEvents();
+      setupSwipeDelegation();
     }
 
-    // --- GESTOS DE DESLIZAMIENTO TÁCTIL ---
-                function attachSwipeEvents() {
-      const rows = document.querySelectorAll(".song-item");
-      rows.forEach(item => {
-        let startX = 0;
-        let startY = 0;
-        let currentX = 0;
-        let currentY = 0;
-        let isHorizontalSwipe = false;
-        let gestureChecked = false;
+    // --- GESTOS DE DESLIZAMIENTO TÁCTIL (DELEGACIÓN ÚNICA ULTRA-EFICIENTE) ---
+    function setupSwipeDelegation() {
+      if (isSwipeDelegationSetup) return;
+      const container = document.getElementById("songList");
+      if (!container) return;
+      isSwipeDelegationSetup = true;
 
-        item.addEventListener("touchstart", (e) => {
-          if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) {
+      let activeItem = null;
+      let startX = 0;
+      let startY = 0;
+      let currentX = 0;
+      let currentY = 0;
+      let isHorizontalSwipe = false;
+      let gestureChecked = false;
+
+      container.addEventListener("touchstart", (e) => {
+        if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
+        const item = e.target.closest(".song-item");
+        if (!item) return;
+
+        activeItem = item;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        currentX = startX;
+        currentY = startY;
+        isHorizontalSwipe = false;
+        gestureChecked = false;
+        activeItem.style.transition = "none";
+      }, { passive: true });
+
+      container.addEventListener("touchmove", (e) => {
+        if (!activeItem || e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
+        currentX = e.touches[0].clientX;
+        currentY = e.touches[0].clientY;
+        const diffX = currentX - startX;
+        const diffY = currentY - startY;
+
+        if (!gestureChecked && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
+          gestureChecked = true;
+          if (Math.abs(diffY) > Math.abs(diffX)) {
+            isHorizontalSwipe = false;
+            activeItem = null;
             return;
           }
-          startX = e.touches[0].clientX;
-          startY = e.touches[0].clientY;
-          currentX = startX;
-          currentY = startY;
-          isHorizontalSwipe = false;
-          gestureChecked = false;
-          item.style.transition = "none";
-        }, { passive: true });
-
-        item.addEventListener("touchmove", (e) => {
-          if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
-          currentX = e.touches[0].clientX;
-          currentY = e.touches[0].clientY;
-          const diffX = currentX - startX;
-          const diffY = currentY - startY;
-
-          if (!gestureChecked && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
-            gestureChecked = true;
-            // Si el movimiento es vertical, permitir el scroll normal de la lista
-            if (Math.abs(diffY) > Math.abs(diffX)) {
-              isHorizontalSwipe = false;
-              return;
-            }
-            // Si el movimiento es horizontal hacia la derecha, activar swipe
-            if (diffX > 12) {
-              isHorizontalSwipe = true;
-              const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
-              if (bg) bg.style.display = "flex";
-            }
+          if (diffX > 12) {
+            isHorizontalSwipe = true;
+            const bg = activeItem.parentElement ? activeItem.parentElement.querySelector(".swipe-bg-queue") : null;
+            if (bg) bg.style.display = "flex";
           }
+        }
 
-          if (isHorizontalSwipe) {
-            // BLOQUEO ESTRICTO: Previene que la lista de canciones haga scroll vertical mientras arrastras a la cola!
-            if (e.cancelable) e.preventDefault();
-            if (diffX > 0) {
-              const drag = Math.min(diffX - 12, 110);
-              item.style.transform = `translateX(${drag}px)`;
-            }
+        if (isHorizontalSwipe && activeItem) {
+          if (e.cancelable) e.preventDefault();
+          if (diffX > 0) {
+            const drag = Math.min(diffX - 12, 110);
+            activeItem.style.transform = `translateX(${drag}px)`;
           }
-        }, { passive: false });
+        }
+      }, { passive: false });
 
-        item.addEventListener("touchend", (e) => {
-          if (e.target.closest(".song-btn-dots") || e.target.closest(".song-actions")) return;
-          item.style.transition = "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)";
-          const diffX = currentX - startX;
+      const finishSwipe = () => {
+        if (!activeItem) return;
+        const item = activeItem;
+        item.style.transition = "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)";
+        const diffX = currentX - startX;
 
-          if (isHorizontalSwipe && diffX > 85) {
-            const songId = item.getAttribute("data-id");
-            const song = allSongs.find(s => s.id === songId);
-            if (song) {
-              agregarAColaDirecto(song);
-            }
-          }
+        if (isHorizontalSwipe && diffX > 85) {
+          const songId = item.getAttribute("data-id");
+          const song = allSongs.find(s => s.id === songId);
+          if (song) agregarAColaDirecto(song);
+        }
 
-          item.style.transform = "translateX(0px)";
-          setTimeout(() => {
-            const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
-            if (bg) bg.style.display = "none";
-          }, 260);
-
-          isHorizontalSwipe = false;
-          gestureChecked = false;
-        });
-
-        item.addEventListener("touchcancel", () => {
-          item.style.transition = "transform 0.25s ease";
-          item.style.transform = "translateX(0px)";
+        item.style.transform = "translateX(0px)";
+        setTimeout(() => {
           const bg = item.parentElement ? item.parentElement.querySelector(".swipe-bg-queue") : null;
           if (bg) bg.style.display = "none";
-          isHorizontalSwipe = false;
-          gestureChecked = false;
-        });
-      });
+        }, 260);
+
+        activeItem = null;
+        isHorizontalSwipe = false;
+        gestureChecked = false;
+      };
+
+      container.addEventListener("touchend", finishSwipe);
+      container.addEventListener("touchcancel", finishSwipe);
     }
 
     function agregarAColaDirecto(song) {
@@ -2071,7 +2086,7 @@
       // directo desde Odiseo, incluso si la canción está descargada a 320 kbps.
       if (activeServerBase === LOCAL_LAN_BASE) {
         showToast("🎧 Reproduciendo FLAC Bit-Perfect Original (Modo Casa / LAN)");
-        iniciarAudioElement(`${LOCAL_LAN_BASE}/api/stream/${s.id}`, currentRequestId, false);
+        iniciarAudioElement(`${LOCAL_LAN_BASE}/api/stream/${s.id}`, currentRequestId, false, startTime);
         return;
       }
 
@@ -2084,30 +2099,57 @@
           if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
           currentObjectUrl = URL.createObjectURL(blob);
           showToast("⚡ Reproduciendo desde el iPhone (Offline AAC 320k)");
-          iniciarAudioElement(currentObjectUrl, currentRequestId, true);
+          iniciarAudioElement(currentObjectUrl, currentRequestId, true, startTime);
         } else {
-          iniciarAudioElement(`${activeServerBase}/api/stream/${s.id}`, currentRequestId, false);
+          iniciarAudioElement(`${activeServerBase}/api/stream/${s.id}`, currentRequestId, false, startTime);
         }
       });
     }
 
-    function iniciarAudioElement(streamUrl, currentRequestId, isLocalOffline) {
+    function iniciarAudioElement(streamUrl, currentRequestId, isLocalOffline, startTime = 0) {
       try {
+        if (playbackStallCheckTimer) {
+          clearTimeout(playbackStallCheckTimer);
+          playbackStallCheckTimer = null;
+        }
+
         audio.pause();
-        audio.src = streamUrl;
+        // Añadir timestamp anti-caché de socket muerto si es reconexión remota tras pausa
+        const finalUrl = (startTime > 0 && !isLocalOffline)
+          ? `${streamUrl}${streamUrl.includes('?') ? '&' : '?'}t=${Date.now()}`
+          : streamUrl;
+
+        audio.src = finalUrl;
         audio.load();
+
+        let seekApplied = false;
+        const applySeek = () => {
+          if (!seekApplied && startTime > 0 && audio.duration && !isNaN(audio.duration)) {
+            seekApplied = true;
+            try { audio.currentTime = startTime; } catch(e) {}
+          }
+        };
+
+        if (startTime > 0) {
+          audio.addEventListener("loadedmetadata", applySeek, { once: true });
+          audio.addEventListener("canplay", applySeek, { once: true });
+        }
 
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
             if (currentRequestId !== playbackRequestId) return;
             isPlaying = true;
+            userManuallyPaused = false;
+            wasInterruptedWhilePlaying = false;
+            if (startTime > 0 && !seekApplied) applySeek();
             actualizarBotonesPlay();
             const s = filteredSongs[currentIndex];
             if (s) {
               actualizarMediaSession(s);
               notifySwiftNowPlaying(s, true);
             }
+            verificarSaludStream(startTime);
           }).catch(err => {
             if (err.name === "AbortError" || currentRequestId !== playbackRequestId) {
               return;
@@ -2117,9 +2159,7 @@
               activeServerBase = TAILSCALE_BASE;
               const s = filteredSongs[currentIndex];
               if (s) {
-                audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
-                audio.load();
-                audio.play().catch(() => {});
+                iniciarAudioElement(`${TAILSCALE_BASE}/api/stream/${s.id}`, currentRequestId, false, startTime);
               }
             }
           });
@@ -2127,6 +2167,20 @@
       } catch (e) {
         console.warn("[Audio Exception]", e);
       }
+    }
+
+    function verificarSaludStream(expectedPos) {
+      if (playbackStallCheckTimer) clearTimeout(playbackStallCheckTimer);
+      playbackStallCheckTimer = setTimeout(() => {
+        if (isPlaying && !audio.paused && currentIndex !== -1 && activeOutput === "iphone") {
+          const currentPos = audio.currentTime || 0;
+          // Si el audio no ha avanzado absolutamente nada y no está reproduciendo muestras de audio
+          if (Math.abs(currentPos - expectedPos) < 0.1 && audio.readyState < 3) {
+            console.warn("[Audio Recovery] Socket estancado/congelado tras segundo plano. Reconectando stream en segundo:", currentPos);
+            reproducirPistaActual(currentPos);
+          }
+        }
+      }, 1800);
     }
 
     function togglePlay(forceState) {
@@ -2183,22 +2237,41 @@
       }
 
       if (audio.paused) {
-        audio.play().then(() => {
-          isPlaying = true;
-          userManuallyPaused = false;
-          wasInterruptedWhilePlaying = false;
-          actualizarBotonesPlay();
-          const s = filteredSongs[currentIndex];
-          if (s) {
-            notifySwiftNowPlaying(s, true);
-            if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
-          }
-        }).catch(err => {
-          console.warn("Error al reanudar:", err);
-          reproducirPistaActual();
-        });
+        const curSec = (audio && !isNaN(audio.currentTime) && audio.currentTime > 0) ? audio.currentTime : 0;
+        // Si el stream estuvo pausado más de 12 segundos o el socket perdió datos:
+        const isStale = (audio.readyState < 2 || (Date.now() - lastPauseTime > 12000));
+
+        if (isStale && currentIndex !== -1 && activeOutput === "iphone") {
+          console.log("[Audio] Reconectando stream fresco tras pausa prolongada en:", curSec);
+          reproducirPistaActual(curSec);
+          return;
+        }
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            isPlaying = true;
+            userManuallyPaused = false;
+            wasInterruptedWhilePlaying = false;
+            actualizarBotonesPlay();
+            const s = filteredSongs[currentIndex];
+            if (s) {
+              notifySwiftNowPlaying(s, true);
+              if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+            }
+            verificarSaludStream(curSec);
+          }).catch(err => {
+            console.warn("[Audio] Error al reanudar stream:", err);
+            reproducirPistaActual(curSec);
+          });
+        }
       } else {
         audio.pause();
+        lastPauseTime = Date.now();
+        if (playbackStallCheckTimer) {
+          clearTimeout(playbackStallCheckTimer);
+          playbackStallCheckTimer = null;
+        }
         isPlaying = false;
         userManuallyPaused = true;
         wasInterruptedWhilePlaying = false;
@@ -2400,6 +2473,29 @@
         }
       });
 
+      audio.addEventListener("playing", () => {
+        isPlaying = true;
+        if (playbackStallCheckTimer) {
+          clearTimeout(playbackStallCheckTimer);
+          playbackStallCheckTimer = null;
+        }
+        actualizarBotonesPlay();
+      });
+
+      // AUTO-RECUPERACIÓN: Si el socket se estanca en segundo plano
+      audio.addEventListener("stalled", () => {
+        if (isPlaying && !audio.paused && currentIndex !== -1 && activeOutput === "iphone") {
+          console.warn("[Audio] Evento stalled detectado. Verificando avance...");
+          verificarSaludStream(audio.currentTime || 0);
+        }
+      });
+
+      audio.addEventListener("waiting", () => {
+        if (isPlaying && !audio.paused && currentIndex !== -1 && activeOutput === "iphone") {
+          verificarSaludStream(audio.currentTime || 0);
+        }
+      });
+
       // AUTO-RECUPERACIÓN: Si se corta al cambiar de Wi-Fi a Red Móvil
       audio.addEventListener("error", (e) => {
         console.warn("[Audio Error] Conexión interrumpida:", e);
@@ -2409,9 +2505,7 @@
           document.getElementById("statusLabel").textContent = "Tailscale 5G";
           if (currentIndex !== -1 && filteredSongs[currentIndex]) {
             const s = filteredSongs[currentIndex];
-            audio.src = `${TAILSCALE_BASE}/api/stream/${s.id}`;
-            audio.load();
-            audio.play().catch(console.error);
+            iniciarAudioElement(`${TAILSCALE_BASE}/api/stream/${s.id}`, ++playbackRequestId, false, audio.currentTime || 0);
           }
         }
       });
@@ -2430,13 +2524,15 @@
         document.getElementById("timeCurrent").textContent = formatTime(current);
         document.getElementById("timeRemaining").textContent = `-${formatTime(Math.max(0, total - current))}`;
 
-        // Pre-buffering gapless 15 segundos antes
-        if (total > 20 && current >= (total - 15)) {
+        // Pre-buffering gapless inteligente: solo en Wi-Fi/LAN y si no está descargada offline para ahorrar batería
+        if (total > 20 && current >= (total - 12)) {
           const nextIdx = (currentIndex + 1) % filteredSongs.length;
           const nextSong = filteredSongs[nextIdx];
-          if (nextSong && preloadedId !== nextSong.id) {
-            preloadAudio.src = `${activeServerBase}/api/stream/${nextSong.id}`;
-            preloadedId = nextSong.id;
+          if (nextSong && preloadedId !== nextSong.id && !downloadedSongIds.has(nextSong.id)) {
+            if (activeServerBase === LOCAL_LAN_BASE) {
+              preloadAudio.src = `${activeServerBase}/api/stream/${nextSong.id}`;
+              preloadedId = nextSong.id;
+            }
           }
         }
       });
@@ -3213,11 +3309,14 @@
       } else if (audio.paused && isPlaying) {
         isPlaying = false;
         actualizarBotonesPlay();
+      } else if (!audio.paused && isPlaying) {
+        verificarSaludStream(audio.currentTime || 0);
       }
     };
 
-    // Watchdog de sincronización de estado de audio (soluciona botón que no cambia a pausado)
+    // Watchdog de sincronización optimizado: corre cada 2500ms y NUNCA en segundo plano para ahorrar batería
     setInterval(() => {
+      if (document.hidden) return;
       if (activeOutput === "iphone" && currentIndex !== -1) {
         // Discrepancia 1: La UI piensa que está reproduciendo pero el reproductor fue pausado externamente
         if (isPlaying && audio.paused && !audio.seeking && !isScrubbing) {
@@ -3225,7 +3324,6 @@
           if (!userManuallyPaused) wasInterruptedWhilePlaying = true;
           isPlaying = false;
           actualizarBotonesPlay();
-          const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "none";
           const s = filteredSongs[currentIndex];
           if (s) {
             notifySwiftNowPlaying(s, false);
@@ -3236,10 +3334,9 @@
         else if (!isPlaying && !audio.paused && !audio.seeking && !isScrubbing) {
           isPlaying = true;
           actualizarBotonesPlay();
-          const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "flex";
         }
       }
-    }, 500);
+    }, 2500);
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
@@ -3251,6 +3348,8 @@
           } else if (isPlaying && audio.paused) {
             isPlaying = false;
             actualizarBotonesPlay();
+          } else if (isPlaying && !audio.paused) {
+            verificarSaludStream(audio.currentTime || 0);
           }
         }
       }
@@ -3259,8 +3358,17 @@
     window.addEventListener("focus", () => {
       if (wasInterruptedWhilePlaying && !userManuallyPaused && activeOutput === "iphone") {
         window.onNativeAudioInterruption(false, true);
+      } else if (isPlaying && !audio.paused) {
+        verificarSaludStream(audio.currentTime || 0);
       }
     });
+
+    function onSearchInput(val) {
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        filtrarCanciones(val);
+      }, 120);
+    }
 
     // --- INTEGRACIÓN SWIFT NATIVA Y MEDIASESSION ---
     function notifySwiftNowPlaying(s, playingState) {
