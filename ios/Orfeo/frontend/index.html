@@ -1535,9 +1535,6 @@
     let interruptionResumeTimer = null;
     let lastPauseTime = 0;
     let lastStateSaveTime = 0;
-    let silentKeepAliveCtx = null;
-    let silentKeepAliveNode = null;
-    let silentKeepAliveTimer = null;
     let playbackStallCheckTimer = null;
     let searchDebounceTimer = null;
     let isSwipeDelegationSetup = false;
@@ -1545,53 +1542,6 @@
     let repeatMode = 0; // 0: none, 1: all, 2: one
     let activeOutput = "iphone"; // "iphone" | "nest"
     let isScrubbing = false;
-
-    // --- KEEP-ALIVE SILENCIOSO WEB AUDIO (Previene suspensión en iOS al pausar) ---
-    function startWebSilentKeepAlive() {
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        if (!silentKeepAliveCtx) {
-          silentKeepAliveCtx = new AudioCtx();
-        }
-        if (silentKeepAliveCtx.state === "suspended") {
-          silentKeepAliveCtx.resume();
-        }
-        if (!silentKeepAliveNode) {
-          const buf = silentKeepAliveCtx.createBuffer(1, silentKeepAliveCtx.sampleRate, silentKeepAliveCtx.sampleRate);
-          silentKeepAliveNode = silentKeepAliveCtx.createBufferSource();
-          silentKeepAliveNode.buffer = buf;
-          silentKeepAliveNode.loop = true;
-          const gain = silentKeepAliveCtx.createGain();
-          gain.gain.value = 0.0001; // Inaudible
-          silentKeepAliveNode.connect(gain);
-          gain.connect(silentKeepAliveCtx.destination);
-          silentKeepAliveNode.start(0);
-          console.log("[KeepAlive Web] Audio silencioso activo: iOS mantendrá la app viva en segundo plano.");
-        }
-        if (silentKeepAliveTimer) clearTimeout(silentKeepAliveTimer);
-        silentKeepAliveTimer = setTimeout(() => {
-          stopWebSilentKeepAlive();
-        }, 30 * 60 * 1000); // 30 minutos de gracia máxima
-      } catch (e) {
-        console.warn("[KeepAlive Web Error]", e);
-      }
-    }
-
-    function stopWebSilentKeepAlive() {
-      if (silentKeepAliveTimer) {
-        clearTimeout(silentKeepAliveTimer);
-        silentKeepAliveTimer = null;
-      }
-      if (silentKeepAliveNode) {
-        try {
-          silentKeepAliveNode.stop();
-          silentKeepAliveNode.disconnect();
-        } catch (e) {}
-        silentKeepAliveNode = null;
-        console.log("[KeepAlive Web] Audio silencioso detenido.");
-      }
-    }
 
     // --- PERSISTENCIA DE ESTADO DE REPRODUCCIÓN (0 ms Recuperación tras cierre) ---
     function guardarEstadoReproduccion(songId, currentTime) {
@@ -1634,16 +1584,6 @@
           if (tr) tr.textContent = `-${formatTime(Math.max(0, dur - lastPos))}`;
         }
 
-        const finalUrl = `${activeServerBase}/api/stream/${s.id}`;
-        audio.src = finalUrl;
-        audio.load();
-        audio.addEventListener("loadedmetadata", () => {
-          if (lastPos > 0) {
-            try { audio.currentTime = lastPos; } catch(e) {}
-          }
-        }, { once: true });
-
-        notifySwiftNowPlaying(s, false);
         if ("mediaSession" in navigator) {
           actualizarMediaSession(s);
           navigator.mediaSession.playbackState = "paused";
@@ -2195,17 +2135,8 @@
 
       const currentRequestId = ++playbackRequestId;
 
-      // PRIORIDAD ABSOLUTA EN MODO LAN (Wi-Fi de Casa):
-      // Si estamos en la red local de casa (LAN 0 ms), reproducir SIEMPRE el stream original FLAC Lossless Bit-Perfect
-      // directo desde Odiseo, incluso si la canción está descargada a 320 kbps.
-      if (activeServerBase === LOCAL_LAN_BASE) {
-        showToast("🎧 Reproduciendo FLAC Bit-Perfect Original (Modo Casa / LAN)");
-        iniciarAudioElement(`${LOCAL_LAN_BASE}/api/stream/${s.id}`, currentRequestId, false, startTime);
-        return;
-      }
-
-      // FUERA DE CASA (4G/5G, Tailscale o sin red):
-      // Si la pista está descargada, reproducir el blob local a 320 kbps (0 ms, 0 datos)
+      // REPRODUCCIÓN EN IPHONE:
+      // Si la pista está descargada offline, reproducir el blob local a 320 kbps (0 ms, 0 datos)
       obtenerAudioOfflineBlob(s.id).then(blob => {
         if (currentRequestId !== playbackRequestId) return;
 
@@ -2215,7 +2146,9 @@
           showToast("⚡ Reproduciendo desde el iPhone (Offline AAC 320k)");
           iniciarAudioElement(currentObjectUrl, currentRequestId, true, startTime);
         } else {
-          iniciarAudioElement(`${activeServerBase}/api/stream/${s.id}`, currentRequestId, false, startTime);
+          // Streaming nativo de alta fidelidad: AAC 320k (audio/mp4) compatible 100% con hardware iPhone
+          showToast("🎧 Reproduciendo AAC 320k Lossless");
+          iniciarAudioElement(`${activeServerBase}/api/stream/${s.id}?format=320k`, currentRequestId, false, startTime);
         }
       });
     }
@@ -2227,8 +2160,7 @@
           playbackStallCheckTimer = null;
         }
 
-        audio.pause();
-        // Añadir timestamp anti-caché de socket muerto si es reconexión remota tras pausa
+        // Añadir timestamp anti-caché de socket si es reconexión remota tras pausa
         const finalUrl = (startTime > 0 && !isLocalOffline)
           ? `${streamUrl}${streamUrl.includes('?') ? '&' : '?'}t=${Date.now()}`
           : streamUrl;
@@ -2253,7 +2185,6 @@
         if (playPromise !== undefined) {
           playPromise.then(() => {
             if (currentRequestId !== playbackRequestId) return;
-            stopWebSilentKeepAlive();
             isPlaying = true;
             userManuallyPaused = false;
             wasInterruptedWhilePlaying = false;
@@ -2275,7 +2206,7 @@
               activeServerBase = TAILSCALE_BASE;
               const s = filteredSongs[currentIndex];
               if (s) {
-                iniciarAudioElement(`${TAILSCALE_BASE}/api/stream/${s.id}`, currentRequestId, false, startTime);
+                iniciarAudioElement(`${TAILSCALE_BASE}/api/stream/${s.id}?format=320k`, currentRequestId, false, startTime);
               }
             }
           });
@@ -2353,13 +2284,12 @@
       }
 
       if (audio.paused) {
-        stopWebSilentKeepAlive();
         const curSec = (audio && !isNaN(audio.currentTime) && audio.currentTime > 0) ? audio.currentTime : 0;
-        // Si el stream estuvo pausado más de 5 segundos o el socket perdió datos:
-        const isStale = (audio.readyState < 2 || (Date.now() - lastPauseTime > 5000));
+        // Si el stream estuvo pausado más de 10 segundos o no tiene src o el socket perdió datos:
+        const isStale = (!audio.src || audio.readyState < 2 || (Date.now() - lastPauseTime > 10000));
 
         if (isStale && currentIndex !== -1 && activeOutput === "iphone") {
-          console.log("[Audio] Reconectando stream fresco tras pausa en:", curSec);
+          console.log("[Audio] Reconectando stream en:", curSec);
           reproducirPistaActual(curSec);
           return;
         }
@@ -2367,7 +2297,6 @@
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
-            stopWebSilentKeepAlive();
             isPlaying = true;
             userManuallyPaused = false;
             wasInterruptedWhilePlaying = false;
@@ -2386,7 +2315,6 @@
         }
       } else {
         audio.pause();
-        startWebSilentKeepAlive();
         lastPauseTime = Date.now();
         if (playbackStallCheckTimer) {
           clearTimeout(playbackStallCheckTimer);
@@ -2560,7 +2488,6 @@
     // --- EVENTOS DE AUDIO Y AUTO-RECUPERACIÓN EN CAMBIO DE RED ---
     function setupAudioEvents() {
       audio.addEventListener("play", () => {
-        stopWebSilentKeepAlive();
         isPlaying = true;
         actualizarBotonesPlay();
         const eq = document.getElementById("islandEq"); if (eq) eq.style.display = "flex";
@@ -2586,7 +2513,6 @@
           notifySwiftNowPlaying(s, false);
           if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
         }
-        startWebSilentKeepAlive();
       });
 
       audio.addEventListener("ended", () => {
@@ -2599,7 +2525,6 @@
       });
 
       audio.addEventListener("playing", () => {
-        stopWebSilentKeepAlive();
         isPlaying = true;
         if (playbackStallCheckTimer) {
           clearTimeout(playbackStallCheckTimer);
@@ -2631,7 +2556,7 @@
           document.getElementById("statusLabel").textContent = "Tailscale 5G";
           if (currentIndex !== -1 && filteredSongs[currentIndex]) {
             const s = filteredSongs[currentIndex];
-            iniciarAudioElement(`${TAILSCALE_BASE}/api/stream/${s.id}`, ++playbackRequestId, false, audio.currentTime || 0);
+            iniciarAudioElement(`${TAILSCALE_BASE}/api/stream/${s.id}?format=320k`, ++playbackRequestId, false, audio.currentTime || 0);
           }
         }
       });
@@ -2661,10 +2586,8 @@
           const nextIdx = (currentIndex + 1) % filteredSongs.length;
           const nextSong = filteredSongs[nextIdx];
           if (nextSong && preloadedId !== nextSong.id && !downloadedSongIds.has(nextSong.id)) {
-            if (activeServerBase === LOCAL_LAN_BASE) {
-              preloadAudio.src = `${activeServerBase}/api/stream/${nextSong.id}`;
-              preloadedId = nextSong.id;
-            }
+            preloadAudio.src = `${activeServerBase}/api/stream/${nextSong.id}?format=320k`;
+            preloadedId = nextSong.id;
           }
         }
       });
@@ -3400,7 +3323,6 @@
           if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
         }
         try { audio.pause(); } catch(e) {}
-        startWebSilentKeepAlive();
       } else {
         // Finalizó el audio/video externo
         if (wasInterruptedWhilePlaying && shouldResume !== false && !userManuallyPaused) {
@@ -3410,11 +3332,9 @@
             if (activeOutput === "nest") {
               if (!isPlaying) togglePlay();
             } else {
-              stopWebSilentKeepAlive();
               const playPromise = audio.play();
               if (playPromise !== undefined) {
                 playPromise.then(() => {
-                  stopWebSilentKeepAlive();
                   isPlaying = true;
                   userManuallyPaused = false;
                   actualizarBotonesPlay();

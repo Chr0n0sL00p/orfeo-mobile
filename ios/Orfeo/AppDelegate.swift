@@ -7,8 +7,6 @@ import WebKit
 class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     var mainVC: MainViewController?
-    private var silentPlayer: AVAudioPlayer?
-    private var silenceReleaseTimer: Timer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // 1. Audio Session for Continuous Background Playback & Interruption Handling
@@ -112,83 +110,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
-    // MARK: - Audio Keep-Alive Silencioso (Previene suspensión de iOS en Pausa)
-    private func createSilentWavData() -> Data {
-        var data = Data()
-        data.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
-        let fileSize: UInt32 = 16036
-        withUnsafeBytes(of: fileSize) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
-        data.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
-        let subchunk1Size: UInt32 = 16
-        withUnsafeBytes(of: subchunk1Size) { data.append(contentsOf: $0) }
-        let audioFormat: UInt16 = 1 // PCM
-        withUnsafeBytes(of: audioFormat) { data.append(contentsOf: $0) }
-        let numChannels: UInt16 = 1 // Mono
-        withUnsafeBytes(of: numChannels) { data.append(contentsOf: $0) }
-        let sampleRate: UInt32 = 8000
-        withUnsafeBytes(of: sampleRate) { data.append(contentsOf: $0) }
-        let byteRate: UInt32 = 16000 // SampleRate * NumChannels * BitsPerSample/8
-        withUnsafeBytes(of: byteRate) { data.append(contentsOf: $0) }
-        let blockAlign: UInt16 = 2
-        withUnsafeBytes(of: blockAlign) { data.append(contentsOf: $0) }
-        let bitsPerSample: UInt16 = 16
-        withUnsafeBytes(of: bitsPerSample) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
-        let subchunk2Size: UInt32 = 16000
-        withUnsafeBytes(of: subchunk2Size) { data.append(contentsOf: $0) }
-        data.append(Data(count: 16000))
-        return data
-    }
-
-    func startSilentKeepAlive() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.silenceReleaseTimer?.invalidate()
-            // Mantener viva la app en pausa hasta por 30 minutos antes de liberar recursos
-            self.silenceReleaseTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: false) { [weak self] _ in
-                self?.stopSilentKeepAlive()
-            }
-            if self.silentPlayer == nil {
-                let silentData = self.createSilentWavData()
-                do {
-                    self.silentPlayer = try AVAudioPlayer(data: silentData)
-                    self.silentPlayer?.numberOfLoops = -1
-                    self.silentPlayer?.volume = 0.001
-                    self.silentPlayer?.prepareToPlay()
-                } catch {
-                    print("[Orfeo KeepAlive] Error creando silentPlayer: \(error)")
-                }
-            }
-            if let sp = self.silentPlayer, !sp.isPlaying {
-                do {
-                    try AVAudioSession.sharedInstance().setActive(true)
-                    sp.play()
-                    print("[Orfeo KeepAlive] Keep-Alive silencioso activado: iOS no suspenderá la app.")
-                } catch {
-                    print("[Orfeo KeepAlive] Error reactivando sesión: \(error)")
-                }
-            }
-        }
-    }
-
-    func stopSilentKeepAlive() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.silenceReleaseTimer?.invalidate()
-            self.silenceReleaseTimer = nil
-            if let sp = self.silentPlayer, sp.isPlaying {
-                sp.pause()
-                print("[Orfeo KeepAlive] Keep-Alive silencioso detenido.")
-            }
-        }
-    }
-
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
 
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.stopSilentKeepAlive()
             do {
                 try AVAudioSession.sharedInstance().setActive(true)
             } catch {
@@ -204,7 +129,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.stopSilentKeepAlive()
             do {
                 try AVAudioSession.sharedInstance().setActive(true)
             } catch {}
@@ -330,13 +254,6 @@ class MainViewController: UIViewController, WKScriptMessageHandler, WKNavigation
             let isPlaying = (body["isPlaying"] as? Bool ?? true)
             info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-
-            let appDelegate = UIApplication.shared.delegate as? AppDelegate
-            if isPlaying {
-                appDelegate?.stopSilentKeepAlive()
-            } else {
-                appDelegate?.startSilentKeepAlive()
-            }
 
         default:
             break
