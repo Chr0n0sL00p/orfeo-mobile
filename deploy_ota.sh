@@ -8,23 +8,38 @@ REMOTE_DIR="/opt/jarvis/music_app/static/mobile"
 
 echo ">>> [Orfeo OTA] Preparando despliegue Over-The-Air a Odiseo..."
 
-# 1. Copiar index.html al servidor Odiseo
-scp frontend/index.html ${ODISEO_USER}@${ODISEO_HOST}:${REMOTE_DIR}/index.html
-
-# 2. Generar version.json con nuevo timestamp y build
 BUILD_NUM=$(date +%s)
-VERSION="2.0.1"
+VERSION="2.3.7"
 DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+CHANGELOG="Optimización de visibilidad modal, delegación táctil eficiente para gestos swipe y refuerzo de reactivación de AVAudioSession"
 
-ssh ${ODISEO_USER}@${ODISEO_HOST} "cat << 'EOF' > ${REMOTE_DIR}/version.json
+# Comprobar si se ejecuta localmente en Odiseo
+if [ -d "$REMOTE_DIR" ] && (ip -4 addr show 2>/dev/null | grep -q "${ODISEO_HOST}" || [ "$(hostname)" = "Odiseo" ]); then
+  echo ">>> [Orfeo OTA] Modo local en servidor Odiseo detectado."
+  cp frontend/index.html "${REMOTE_DIR}/index.html"
+  cat << EOF > "${REMOTE_DIR}/version.json"
+{
+  "version": "${VERSION}",
+  "build": ${BUILD_NUM},
+  "release_date": "${DATE_ISO}",
+  "changelog": "${CHANGELOG}",
+  "bundle_url": "/static/mobile/index.html"
+}
+EOF
+else
+  echo ">>> [Orfeo OTA] Modo remoto detectado, enviando vía SCP/SSH..."
+  scp frontend/index.html ${ODISEO_USER}@${ODISEO_HOST}:${REMOTE_DIR}/index.html
+  ssh ${ODISEO_USER}@${ODISEO_HOST} "cat << 'EOF' > ${REMOTE_DIR}/version.json
 {
   \"version\": \"${VERSION}\",
   \"build\": ${BUILD_NUM},
   \"release_date\": \"${DATE_ISO}\",
-  \"changelog\": \"Actualización OTA automática desde PC Ryzen\",
+  \"changelog\": \"${CHANGELOG}\",
   \"bundle_url\": \"/static/mobile/index.html\"
 }
 EOF"
+fi
 
 echo ">>> [Orfeo OTA] ¡Despliegue completado! Build: ${BUILD_NUM}"
 echo ">>> Al abrir Orfeo en tu iPhone 16 Pro, la app detectará la actualización y la aplicará al instante sin cables."
+
